@@ -41,9 +41,13 @@ function createApp() {
   // GET / — health check. Frontend mengecek ini tiap 30 detik (checkServerHealth di
   // 09-send-status.js) buat nampilin/nyembunyiin banner "server down".
   app.get('/', (req, res) => {
-    res.status(200).json({ status: 'ok', service: 'OxyChat API' });
+    res.status(200).json({
+      status: 'ok',
+      service: 'OxyChat API',
+      providers: env.providerAvailable,
+    });
   });
-
+  
   app.use('/api', chatRoutes);
   app.use('/api', keysRoutes);
   app.use('/api', redeemRoutes);
