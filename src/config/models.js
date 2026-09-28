@@ -2,6 +2,11 @@
 
 const env = require('./env');
 
+/**
+ * SOURCE OF TRUTH provider routing — disalin persis dari chat/js/01-config-provider.js.
+ * Urutan pengecekan SENGAJA sama seperti frontend punya getProviderName():
+ * spectrax -> openrouter -> nvidia -> mistral -> perplexity -> (default) groq.
+ */
 const SPECTRAX_MODELS = ['spectrax'];
 const OPENROUTER_MODELS = ['openrouter/free'];
 const NVIDIA_MODELS = [
@@ -30,9 +35,16 @@ const ALL_KNOWN_MODELS = new Set([
 
 const VISION_MODELS = ['qwen/qwen3.6-27b'];
 
-/** Remap ID publik → model upstream yang lebih sering available di Groq */
+/**
+ * Default upstream remap untuk ID model publik yang sering ditolak Groq
+ * (nama lama / enterprise-only / typo historis di frontend).
+ * Bisa dioverride lewat env MODEL_OVERRIDES.
+ *
+ * Catatan: ID publik ke frontend TIDAK berubah — cuma string yang dikirim ke API Groq.
+ */
 const DEFAULT_UPSTREAM_REMAP = {
-  'qwen/qwen3.6-27b': 'openai/gpt-oss-20b',
+  // X1.6 / X2.0 sering ditolak free-tier Groq — remap ke gpt-oss yang production.
+  // qwen/qwen3.6-27b JANGAN di-remap ke text-only (itu VISION_MODEL frontend).
   'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
   'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
 };
