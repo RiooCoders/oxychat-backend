@@ -10,6 +10,11 @@ const { badGateway } = require('../utils/errors');
 
 const PROVIDERS = { groq, nvidia, mistral, perplexity, openrouter };
 
+/**
+ * Model publik -> provider + upstream model.
+ * FIX: cek isAvailable() di sini biar error jelas SEBELUM nembak upstream
+ * (bukan "model tidak tersedia" yang membingungkan padahal key-nya kosong).
+ */
 function resolveModelRoute(model) {
   const providerName = resolveProvider(model);
   if (providerName === 'spectrax') {
@@ -21,7 +26,7 @@ function resolveModelRoute(model) {
   }
   if (typeof provider.isAvailable === 'function' && !provider.isAvailable()) {
     throw badGateway(
-      `Provider \( {providerName} sedang tidak tersedia ( \){providerName.toUpperCase()}_API_KEY kosong/belum di-set di environment)`
+      `Provider ${providerName} sedang tidak tersedia (${providerName.toUpperCase()}_API_KEY kosong/belum di-set di environment)`
     );
   }
   const upstreamModel = resolveUpstreamModel(model);
