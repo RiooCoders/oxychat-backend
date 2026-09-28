@@ -24,16 +24,23 @@ function buildSanitizedPayload(body, providerName) {
 
 function normalizeNonStreamResponse(data, upstreamModel) {
   if (!data || typeof data !== 'object') return data;
+  const { sanitizeCompletionPayload } = require('../utils/sanitize-content');
+  const cleaned = sanitizeCompletionPayload(data);
   return {
-    id: data.id || `chatcmpl-${Date.now().toString(36)}`,
-    object: data.object || 'chat.completion',
-    created: data.created || Math.floor(Date.now() / 1000),
-    model: data.model || upstreamModel,
-    choices: data.choices || [],
-    usage: data.usage,
+    id: cleaned.id || `chatcmpl-${Date.now().toString(36)}`,
+    object: cleaned.object || 'chat.completion',
+    created: cleaned.created || Math.floor(Date.now() / 1000),
+    model: cleaned.model || upstreamModel,
+    choices: cleaned.choices || [],
+    usage: cleaned.usage,
   };
 }
 
+/**
+ * FIX: kalau Groq/NVIDIA gagal karena model/key availability, fallback ke OpenRouter
+ * (yang di server lo sudah terbukti jalan) supaya chat gak mati total.
+ * Hanya untuk error availability — request invalid tetap dilempar apa adanya.
+ */
 function isAvailabilityFailure(err) {
   if (!(err instanceof ApiError)) return true;
   return (
@@ -65,7 +72,10 @@ async function handleChat(body, { signal, modelAlreadyResolved = false } = {}) {
       if (signal && signal.aborted) throw err;
       if (!isAvailabilityFailure(err)) throw err;
       const fb = await tryOpenRouterFallback({
-        payload, stream: validated.stream, signal, reason: err.code || err.message,
+        payload,
+        stream: validated.stream,
+        signal,
+        reason: err.code || err.message,
       });
       if (!fb) throw err;
       return finalizeResult(fb, 'openrouter', env.openrouterModel);
@@ -86,10 +96,13 @@ async function handleChat(body, { signal, modelAlreadyResolved = false } = {}) {
     return finalizeResult(result, route.providerName, route.upstreamModel);
   } catch (err) {
     if (signal && signal.aborted) throw err;
+    // Fallback cuma buat provider non-openrouter (hindari loop)
     if (route.providerName === 'openrouter' || !isAvailabilityFailure(err)) throw err;
     const fb = await tryOpenRouterFallback({
-      payload, stream: validated.stream, signal,
-      reason: `\( {route.providerName}: \){err.code || err.message}`,
+      payload,
+      stream: validated.stream,
+      signal,
+      reason: `${route.providerName}:${err.code || err.message}`,
     });
     if (!fb) throw err;
     return finalizeResult(fb, 'openrouter', env.openrouterModel);
