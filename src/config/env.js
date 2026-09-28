@@ -53,10 +53,10 @@ const env = {
   // Default di bawah ini persis nilai yang ada di chat/js/00-supabase.js (SUPABASE_URL +
   // anon key) — anon key ini memang didesain publik (dilindungi RLS), makanya aman dijadiin
   // default, tapi tetep bisa dioverride lewat env kalau project Supabase-nya beda/pindah.
-  supabaseUrl: process.env.SUPABASE_URL || 'https://decfoxbykpcqvaagwtwe.supabase.co',
+  supabaseUrl: process.env.SUPABASE_URL || 'https://ugiehwqyrfgdjdsjbtrg.supabase.co',
   supabaseAnonKey:
     process.env.SUPABASE_ANON_KEY ||
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlY2ZveGJ5a3BjcXZhYWd3dHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5NjE2ODAsImV4cCI6MjEwMDUzNzY4MH0.R4hDp9KFLI4PPNVUyLy5drMDIN9JXWSafsMYdlQJ5U0',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnaWVod3F5cmZnZGpkc2pidHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MzgxMzQsImV4cCI6MjEwNjExNDEzNH0.UHfgPh-8_gdxUkF4uL70gsQtxGArcT1lMyfw5gTq3rA',
   supabaseAuthTimeoutMs: parseIntEnv('SUPABASE_AUTH_TIMEOUT_MS', 8000),
   // ---------- Supabase service_role (HARDENING, audit lanjutan CRITICAL-3 Phase 2) ----------
   // RAHASIA — beda total dari anon key di atas. HANYA dipakai server-to-server lewat
