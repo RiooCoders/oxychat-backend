@@ -1,70 +1,106 @@
 'use strict';
 
-const { Readable } = require('node:stream');
+const { Readable, Transform } = require('node:stream');
 const logger = require('./logger');
 const { ApiError, internal } = require('./errors');
+const { sanitizeSseDataLine } = require('./sanitize-content');
 
 function sendError(res, err) {
   const apiErr = err instanceof ApiError ? err : internal(err.message, 'INTERNAL_ERROR', { cause: err });
-  if (!(err instanceof ApiError)) logger.error('unhandled_chat_error', { id: res.req?.id, message: err.message, stack: err.stack });
+  if (!(err instanceof ApiError)) {
+    logger.error('unhandled_chat_error', { id: res.req?.id, message: err.message, stack: err.stack });
+  }
   const body = apiErr.toJSON();
   if (res.req?.id) body.error.requestId = res.req.id;
   res.status(apiErr.status).json(body);
 }
 
-/** Relay byte-per-byte SSE dari upstream ke client. Upstream provider udah OpenAI-compatible,
- * jadi gak perlu di-parse ulang — cukup diteruskan apa adanya biar gak ada risiko salah format. */
+/**
+ * Transform stream: filter reasoning leak di SSE chunk demi chunk.
+ * Buffer partial lines biar JSON SSE gak kepotong di tengah.
+ */
+function createSseSanitizeTransform() {
+  let buffer = '';
+  return new Transform({
+    transform(chunk, _enc, cb) {
+      try {
+        buffer += chunk.toString('utf8');
+        const parts = buffer.split('\n');
+        buffer = parts.pop() || '';
+        let out = '';
+        for (const part of parts) {
+          const line = part.endsWith('\r') ? part.slice(0, -1) : part;
+          if (line.startsWith('data:')) {
+            out += sanitizeSseDataLine(line) + '\n';
+          } else {
+            out += part + '\n';
+          }
+        }
+        if (out) this.push(out);
+        cb();
+      } catch (err) {
+        cb(err);
+      }
+    },
+    flush(cb) {
+      try {
+        if (buffer) {
+          if (buffer.startsWith('data:')) this.push(sanitizeSseDataLine(buffer) + '\n');
+          else this.push(buffer);
+        }
+        cb();
+      } catch (err) {
+        cb(err);
+      }
+    },
+  });
+}
+
 function pipeSse(res, upstreamResponse) {
   res.status(200);
   res.set({
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no', // matiin buffering reverse proxy (nginx dkk) biar beneran streaming
+    'X-Accel-Buffering': 'no',
   });
   res.flushHeaders?.();
 
   const nodeStream = Readable.fromWeb(upstreamResponse.body);
+  const sanitize = createSseSanitizeTransform();
   let closedByClient = false;
 
-  // PENTING: pakai res.on('close'), BUKAN req.on('close'). req.on('close') di Node bisa kefire
-  // begitu body request selesai DIBACA (jauh sebelum response ini kelar) — bukan cuma pas koneksi
-  // client beneran putus — jadi salah kalau dipakai buat deteksi abort. res.on('close') baru fire
-  // pas koneksi buat RESPONSE ini beneran ditutup, dan `res.writableEnded` bilang apakah itu normal
-  // (udah kelar dikirim) atau prematur (client disconnect di tengah jalan).
   res.on('close', () => {
     if (!res.writableEnded) closedByClient = true;
   });
 
-  nodeStream.on('error', (err) => {
-    if (closedByClient) return; // client udah pergi, gak perlu ngapa-ngapain lagi
+  const onError = (err) => {
+    if (closedByClient) return;
     logger.warn('sse_relay_error', { message: err.message });
     if (!res.writableEnded) {
-      // Stream upstream putus di tengah jalan. Gak bisa ganti status code lagi (headers udah
-      // kekirim), jadi kasih tau lewat konten SSE-nya sendiri biar user gak liat potongan diem-diem.
       try {
         res.write(
-          'data: ' + JSON.stringify({ choices: [{ delta: { content: '\n\n[Koneksi ke provider terputus]' } }] }) + '\n\n'
+          'data: ' +
+            JSON.stringify({ choices: [{ delta: { content: '\n\n[Koneksi ke provider terputus]' } }] }) +
+            '\n\n'
         );
         res.write('data: [DONE]\n\n');
       } catch (_) {}
       res.end();
     }
-  });
-  nodeStream.on('end', () => {
+  };
+
+  nodeStream.on('error', onError);
+  sanitize.on('error', onError);
+  sanitize.on('end', () => {
     if (!res.writableEnded) res.end();
   });
-  nodeStream.pipe(res, { end: false });
+
+  nodeStream.pipe(sanitize).pipe(res, { end: false });
 }
 
-/**
- * Jalanin satu request chat lengkap: siapin AbortController yang otomatis abort kalau client
- * disconnect beneran, jalanin chatPromiseFactory(signal), lalu relay hasilnya (stream atau JSON
- * biasa) ke response. Dipakai bareng oleh /api/chat dan /v1/chat biar gak dobel logic.
- */
 async function runChatAndRespond(req, res, chatPromiseFactory) {
   const controller = new AbortController();
-  // Lihat catatan di pipeSse() soal kenapa res.on('close') (bukan req.on('close')) yang benar.
   res.on('close', () => {
     if (!res.writableEnded) controller.abort();
   });
@@ -74,10 +110,11 @@ async function runChatAndRespond(req, res, chatPromiseFactory) {
     if (result.stream) {
       pipeSse(res, result.upstream);
     } else {
-      res.status(200).json(result.data);
+      const { sanitizeCompletionPayload } = require('./sanitize-content');
+      res.status(200).json(sanitizeCompletionPayload(result.data));
     }
   } catch (err) {
-    if (controller.signal.aborted) return; // client udah disconnect beneran, gak perlu balikin apapun lagi
+    if (controller.signal.aborted) return;
     sendError(res, err);
   }
 }
