@@ -12,15 +12,37 @@ function parseOrigins(raw) {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+/** Trim + buang kutip yang sering ke-copy pas paste di Railway/Vercel. */
+function cleanKey(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 function parseModelOverrides(raw) {
-  if (!raw) return {};
+  if (!raw || !String(raw).trim()) return {};
+  const text = String(raw).trim();
   try {
-    const obj = JSON.parse(raw);
-    return obj && typeof obj === 'object' ? obj : {};
+    const obj = JSON.parse(text);
+    return obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
   } catch (_) {
-    // eslint-disable-next-line no-console
-    console.warn('[env] MODEL_OVERRIDES bukan JSON yang valid, diabaikan.');
-    return {};
+    // Fallback: dukung format "a:b,c:d" biar gak silent-fail pas operator isi salah
+    const out = {};
+    for (const part of text.split(',')) {
+      const idx = part.indexOf(':');
+      if (idx <= 0) continue;
+      const k = part.slice(0, idx).trim();
+      const v = part.slice(idx + 1).trim();
+      if (k && v) out[k] = v;
+    }
+    if (Object.keys(out).length === 0) {
+      // eslint-disable-next-line no-console
+      console.warn('[env] MODEL_OVERRIDES bukan JSON yang valid, diabaikan.');
+    }
+    return out;
   }
 }
 
@@ -30,59 +52,40 @@ const env = {
   corsOrigins: parseOrigins(process.env.CORS_ORIGINS),
 
   providerKeys: {
-    groq: process.env.GROQ_API_KEY || '',
-    nvidia: process.env.NVIDIA_API_KEY || '',
-    mistral: process.env.MISTRAL_API_KEY || '',
-    perplexity: process.env.PERPLEXITY_API_KEY || '',
-    openrouter: process.env.OPENROUTER_API_KEY || '',
-    gemini: process.env.GEMINI_API_KEY || '',
+    groq: cleanKey(process.env.GROQ_API_KEY),
+    nvidia: cleanKey(process.env.NVIDIA_API_KEY),
+    mistral: cleanKey(process.env.MISTRAL_API_KEY),
+    perplexity: cleanKey(process.env.PERPLEXITY_API_KEY),
+    openrouter: cleanKey(process.env.OPENROUTER_API_KEY),
+    gemini: cleanKey(process.env.GEMINI_API_KEY),
   },
 
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
   openrouterModel: process.env.OPENROUTER_MODEL || 'openrouter/auto',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-flash-latest',
-  spectraxFallbackModel: process.env.SPECTRAX_FALLBACK_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+  spectraxFallbackModel:
+    process.env.SPECTRAX_FALLBACK_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
   modelOverrides: parseModelOverrides(process.env.MODEL_OVERRIDES),
 
   openrouterSiteUrl: process.env.OPENROUTER_SITE_URL || '',
   openrouterSiteName: process.env.OPENROUTER_SITE_NAME || 'OxyChat',
 
-  adminToken: process.env.ADMIN_TOKEN || '',
+  adminToken: cleanKey(process.env.ADMIN_TOKEN),
 
-  // ---------- Supabase (verifikasi identitas user yang login, BUKAN service role) ----------
-  // Default di bawah ini persis nilai yang ada di chat/js/00-supabase.js (SUPABASE_URL +
-  // anon key) — anon key ini memang didesain publik (dilindungi RLS), makanya aman dijadiin
-  // default, tapi tetep bisa dioverride lewat env kalau project Supabase-nya beda/pindah.
-  supabaseUrl: process.env.SUPABASE_URL || 'https://ugiehwqyrfgdjdsjbtrg.supabase.co',
+  supabaseUrl: cleanKey(process.env.SUPABASE_URL) || 'https://ugiehwqyrfgdjdsjbtrg.supabase.co',
   supabaseAnonKey:
-    process.env.SUPABASE_ANON_KEY ||
+    cleanKey(process.env.SUPABASE_ANON_KEY) ||
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnaWVod3F5cmZnZGpkc2pidHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MzgxMzQsImV4cCI6MjEwNjExNDEzNH0.UHfgPh-8_gdxUkF4uL70gsQtxGArcT1lMyfw5gTq3rA',
   supabaseAuthTimeoutMs: parseIntEnv('SUPABASE_AUTH_TIMEOUT_MS', 8000),
-  // ---------- Supabase service_role (HARDENING, audit lanjutan CRITICAL-3 Phase 2) ----------
-  // RAHASIA — beda total dari anon key di atas. HANYA dipakai server-to-server lewat
-  // services/supabase-admin.service.js (satu-satunya pemanggil: redeem.service.js, buat benar-
-  // benar menerapkan plan berbayar ke Supabase setelah redeem code tervalidasi). TIDAK PERNAH
-  // dikirim ke frontend/browser dengan cara apa pun. Kalau kosong, redeem tipe "plan" akan gagal
-  // dengan jelas (bukan diam-diam nge-skip grant) — lihat redeem.service.js & supabase-admin.service.js.
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  supabaseServiceRoleKey: cleanKey(process.env.SUPABASE_SERVICE_ROLE_KEY),
 
-  // Limit pembuatan API key per identitas owner — flat 1x buat SEMUA plan sesuai
-  // PLANS.*.keyLimit di chat/js/01-config-provider.js (gratis/pro/maks/promax semua "1x").
   apiKeyLimitPerOwner: parseIntEnv('API_KEY_LIMIT_PER_OWNER', 1),
-
-  // Rate limit /v1/chat (API publik) — dua lapis sesuai master prompt: per API key & per IP.
   v1RateLimitPerKeyPerMin: parseIntEnv('V1_CHAT_RATE_LIMIT_PER_KEY', 60),
   v1RateLimitPerIpPerMin: parseIntEnv('V1_CHAT_RATE_LIMIT_PER_IP', 120),
-  // Proteksi abuse infrastruktur buat /api/chat (dipakai frontend sendiri) — beda dari limit
-  // produk (jumlah pesan per plan), yang memang sudah jadi urusan frontend, bukan backend ini.
   chatRateLimitPerMin: parseIntEnv('CHAT_RATE_LIMIT_PER_MIN', 60),
-  // HARDENING (audit lanjutan): lapis KEDUA, wajib, dikunci ke req.ip SAJA (tidak baca header
-  // apa pun dari client) — supaya limit di atas tidak bisa dilewati dengan gonta-ganti
-  // X-Device-Id tiap request. Lihat SECURITY-AUDIT.md HIGH-4.
   chatRateLimitPerIpPerMin: parseIntEnv('CHAT_RATE_LIMIT_PER_IP', 180),
 
   databasePath: process.env.DATABASE_PATH || './data/oxychat.db',
-
   maxBodyBytes: parseIntEnv('MAX_BODY_BYTES', 15 * 1000 * 1000),
   upstreamTimeoutMs: parseIntEnv('UPSTREAM_TIMEOUT_MS', 60000),
 };
