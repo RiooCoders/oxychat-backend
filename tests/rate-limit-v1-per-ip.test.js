@@ -13,7 +13,7 @@ test('/v1/chat: limit per-IP jalan bahkan buat percobaan auth yang gagal', async
   const statuses = [];
   for (let i = 0; i < 8; i++) {
     const res = await fetch(baseUrl + '/v1/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer oxy_salah_banget_tokennya' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer vaeltrix_salah_banget_tokennya' },
       body: JSON.stringify({ messages: [{ role: 'user', content: 'x' }], stream: false }),
     });
     statuses.push(res.status);
