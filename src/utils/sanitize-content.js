@@ -1,23 +1,30 @@
 'use strict';
 
 /**
- * Bersihin "reasoning leak" dari model (DeepSeek R1, Qwen thinking, dll):
- * - blok <think>...</think>
- * - variasi tag sejenis
+ * Bersihin "reasoning leak" dari model (DeepSeek R1, Qwen thinking, OpenRouter auto, dll):
+ * - blok <think>...</think> (termasuk atribut / isi aneh seperti <think>|message|>)
+ * - <thinking>, <reason>, <reasoning>, redacted_reasoning
+ * - tag terbuka yang belum ketutup (stream potongan)
+ * - sisa tag penutup nyangkut
  * Jangan sentuh kode HTML user yang sah di luar pola ini.
  */
 function stripThinkingTags(text) {
   if (!text || typeof text !== 'string') return text;
   let out = text;
-  // Blok think lengkap
-  out = out.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '');
-  // Tag terbuka yang belum ketutup (stream potong di tengah)
-  out = out.replace(/<think\b[^>]*>[\s\S]*$/gi, '');
+
+  // Blok think/thinking/reason lengkap (buka + tutup)
+  out = out.replace(/<(?:think|thinking|reason|reasoning|redacted_reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thinking|reason|reasoning|redacted_reasoning)>/gi, '');
+
+  // Tag terbuka yang belum ketutup (stream potong di tengah / model gak nutup)
+  out = out.replace(/<(?:think|thinking|reason|reasoning|redacted_reasoning)\b[^>]*>[\s\S]*$/gi, '');
+
   // Sisa tag penutup nyangkut
-  out = out.replace(/<\/think>/gi, '');
-  // Beberapa model pakai redacted_reasoning
-  out = out.replace(/<redacted_reasoning\b[^>]*>[\s\S]*?<\/redacted_reasoning>/gi, '');
-  out = out.replace(/<redacted_reasoning\b[^>]*>[\s\S]*$/gi, '');
+  out = out.replace(/<\/(?:think|thinking|reason|reasoning|redacted_reasoning)>/gi, '');
+
+  // Beberapa model (terutama OpenRouter / Qwen) kadang nyisipin prefix aneh di awal jawaban
+  // contoh: "|message|>" atau "User wants a ..." yang kebawa dari system prompt
+  out = out.replace(/^\s*\|message\|>\s*/i, '');
+
   return out;
 }
 
