@@ -19,7 +19,7 @@ test('POST /api/keys: percobaan berulang dengan identitas anonim BEDA-beda tetap
       // akan lolos limit "1 key aktif per owner" karena masing-masing owner-nya baru & belum
       // punya key sama sekali. Limiter yang diuji di sini keyed IP saja (X-Device-Id sengaja
       // TIDAK dikirim), jadi ini murni ngetes lapis per-IP.
-      body: JSON.stringify({ name: 'x', modelId: 'oxy-fast', createdBy: `anon-spam-device-${i}` }),
+      body: JSON.stringify({ name: 'x', modelId: 'vaeltrix-fast', createdBy: `anon-spam-device-${i}` }),
     });
     statuses.push(res.status);
   }
