@@ -10,7 +10,7 @@ function redact(value) {
   if (value == null) return value;
   if (typeof value === 'string') {
     // Bearer token / key panjang di dalam string tetep disamarin sebagian.
-    return value.replace(/(oxy_[A-Za-z0-9]{6})[A-Za-z0-9_-]+/g, '$1***');
+    return value.replace(/(vaeltrix_[A-Za-z0-9]{6})[A-Za-z0-9_-]+/g, '$1***');
   }
   if (Array.isArray(value)) return value.map(redact);
   if (typeof value === 'object') {
