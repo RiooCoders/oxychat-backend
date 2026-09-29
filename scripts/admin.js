@@ -1,25 +1,4 @@
-#!/usr/bin/env node
 'use strict';
-
-/**
- * CLI admin internal buat OxyChat backend — BUKAN endpoint HTTP, jalan langsung di server lewat
- * shell (npm run admin -- <command> [opsi]). Ini cara aman ngatur redeem code & promo featured
- * TANPA bikin endpoint "/api/admin/*" yang bisa diserang dari internet (lihat MASTER PROMPT #33).
- *
- * Kalau ADMIN_TOKEN di .env diisi, CLI ini minta --token=<ADMIN_TOKEN> yang cocok sebelum
- * ngapa-ngapain (jaga-jaga di server yang di-share beberapa orang). Kalau ADMIN_TOKEN kosong,
- * CLI jalan bebas (siapapun yang udah punya akses shell/DB server ini emang udah punya akses penuh).
- *
- * Contoh pemakaian:
- *   node scripts/admin.js create-code --code=PROMO2026 --type=plan --plan=pro --maxUses=100 --expiresInDays=30 --featured
- *   node scripts/admin.js create-code --type=unlock_model --unlockModel=spectrax --hours=24
- *   node scripts/admin.js list-codes
- *   node scripts/admin.js inspect-code --code=PROMO2026
- *   node scripts/admin.js disable-code --code=PROMO2026
- *   node scripts/admin.js feature-code --code=PROMO2026
- *   node scripts/admin.js unfeature-code --code=PROMO2026
- *   node scripts/admin.js list-keys --owner=user@example.com
- */
 
 const env = require('../src/config/env');
 const redeemRepo = require('../src/db/repositories/redeem.repo');
@@ -141,18 +120,10 @@ const commands = {
     if (opts.owner) {
       printRow(apiKeyRepo.listByOwner(opts.owner));
     } else {
-      // getDb() dipakai langsung di sini (bukan lewat repo) khusus buat listing admin lintas-owner.
-      // HARDENING (HIGH-4): kolom terindeks "keyHash" (bukan "key" mentah lagi) — lihat apikey.repo.js.
       printRow(getDb().collection('api_keys', { indexed: ['owner', 'keyHash'] }).findAll());
     }
   },
-
-  // HARDENING (audit lanjutan, CRITICAL-3 Phase 2): redeem kode tipe "plan" sekarang beneran
-  // nge-grant ke Supabase lewat service_role key (lihat services/supabase-admin.service.js).
-  // Kalau panggilan itu gagal (Supabase down, timeout, dll), redeem.service.js nyimpen
-  // grantStatus:'failed' di redemption record TAPI TETAP nganggep kode itu kepake (gak dibalikin
-  // ke pengguna lain) — command ini buat admin nge-retry grant itu manual TANPA user perlu
-  // redeem ulang dari nol.
+  
   async 'retry-grant'(opts) {
     if (!opts.code || !opts.device) {
       console.error('--code dan --device wajib diisi (device = X-Device-Id yang dipakai user pas redeem, lihat log/redemption record)');
@@ -173,7 +144,7 @@ const commands = {
       return;
     }
     if (redemption.grantStatus === 'granted') {
-      console.log('Grant ini udah berhasil sebelumnya (granted) — gak perlu diulang.');
+      console.log('Grant Ini udah berhasil sebelumnya (granted) — Gak Perlu Diulang.');
       return;
     }
     if (!redemption.userId) {
