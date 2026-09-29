@@ -14,7 +14,7 @@ test('/v1/chat: limit per-KEY independen antar key', async (t) => {
   async function createKey(owner) {
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'k', modelId: 'oxy-fast', createdBy: owner }),
+      body: JSON.stringify({ name: 'k', modelId: 'vaeltrix-fast', createdBy: owner }),
     });
     return (await res.json()).key;
   }
