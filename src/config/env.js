@@ -68,7 +68,7 @@ const env = {
   modelOverrides: parseModelOverrides(process.env.MODEL_OVERRIDES),
 
   openrouterSiteUrl: process.env.OPENROUTER_SITE_URL || '',
-  openrouterSiteName: process.env.OPENROUTER_SITE_NAME || 'OxyChat',
+  openrouterSiteName: process.env.OPENROUTER_SITE_NAME || 'VaeltrixAI',
 
   adminToken: cleanKey(process.env.ADMIN_TOKEN),
 
@@ -85,7 +85,7 @@ const env = {
   chatRateLimitPerMin: parseIntEnv('CHAT_RATE_LIMIT_PER_MIN', 60),
   chatRateLimitPerIpPerMin: parseIntEnv('CHAT_RATE_LIMIT_PER_IP', 180),
 
-  databasePath: process.env.DATABASE_PATH || './data/oxychat.db',
+  databasePath: process.env.DATABASE_PATH || './data/vaeltrixai.db',
   maxBodyBytes: parseIntEnv('MAX_BODY_BYTES', 15 * 1000 * 1000),
   upstreamTimeoutMs: parseIntEnv('UPSTREAM_TIMEOUT_MS', 60000),
 };
