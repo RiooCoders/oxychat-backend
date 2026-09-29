@@ -11,7 +11,7 @@ test('health & baseline', async (t) => {
     const res = await fetch(baseUrl + '/');
     const data = await res.json();
     assert.equal(res.status, 200);
-    assert.deepEqual(data, { status: 'ok', service: 'OxyChat API' });
+    assert.deepEqual(data, { status: 'ok', service: 'VaeltrixAI API' });
   });
 
   await t.test('route gak dikenal -> 404 JSON (bukan HTML)', async () => {
