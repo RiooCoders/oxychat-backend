@@ -1,6 +1,6 @@
-# OxyChat Backend (rekonstruksi)
+# VaeltrixAI Backend (rekonstruksi)
 
-Backend hasil reverse-engineering dari frontend **OxyChat** (folder `chat/` beserta
+Backend hasil reverse-engineering dari frontend **VaeltrixAI** (folder `chat/` beserta
 `CreateApikey/` dan `Request-Update/`). Backend asli project ini hilang; source code di sini
 dibangun ulang murni dari kontrak yang benar-benar dipanggil frontend (lihat bagian **Laporan
 Audit** di bawah), bukan tebakan/fitur karangan.
@@ -32,7 +32,7 @@ Server baca `PORT` dari environment (default 3000 kalau tidak diset). Sama persi
 Termux (`pkg install nodejs && npm install && npm start`), VPS, Railway, Render, maupun Fly.io —
 tidak butuh Docker/systemd/GPU untuk jalan.
 
-Arahkan `SERVER_URL` di `chat/js/01-config-provider.js` (dan `oxychat_server_url_v1` yang
+Arahkan `SERVER_URL` di `chat/js/01-config-provider.js` (dan `VaeltrixAI_server_url_v1` yang
 tersimpan di localStorage) ke URL server ini. **Deploy juga `chat/CreateApikey/index.html` dan
 `chat/CreateApikey/script.js` versi terbaru** — keduanya diubah sedikit di putaran hardening ini
 (lihat `CHANGELOG-HARDENING.md`) supaya ownership API key beneran aman.
@@ -90,11 +90,11 @@ Health check. Dipanggil frontend tiap 30 detik buat nampilkan/nyembunyiin banner
 
 ```bash
 curl http://localhost:3000/
-# {"status":"ok","service":"OxyChat API"}
+# {"status":"ok","service":"VaeltrixAI API"}
 ```
 
 ### `POST /api/chat`
-Endpoint utama. Dipanggil frontend (`callOxyAPI`) untuk chat normal, Multi Chat (paralel per
+Endpoint utama. Dipanggil frontend (`callVaeltrixAPI`) untuk chat normal, Multi Chat (paralel per
 model, `stream:false`), auto-title percakapan (`model:"llama-3.1-8b-instant"`), dan deskripsi
 gambar (`model:"qwen/qwen3.6-27b"`, satu-satunya model vision — lihat catatan di bagian audit).
 
@@ -172,13 +172,13 @@ sah kalau didukung sesi login asli). Kalau `createdBy` bukan email (device-id an
 **Limit**: maksimal `API_KEY_LIMIT_PER_OWNER` (default 1) key AKTIF per identitas owner — lebih
 dari itu ditolak `409 API_KEY_LIMIT_REACHED`.
 
-Sukses (`201`): `{"key":"oxy_..."}` — ini **satu-satunya momen** key lengkap ditampilkan. Gagal:
+Sukses (`201`): `{"key":"vaeltrix_..."}` — ini **satu-satunya momen** key lengkap ditampilkan. Gagal:
 `{"error":{"message":"...","code":"..."}}`.
 
 ### `GET /api/keys?createdBy=...`
 (atau kirim `Authorization: Bearer <token>`, `createdBy` jadi opsional — aturan ownership sama
 seperti di atas). Balikin array langsung (bukan dibungkus `{data:[...]}`):
-`[{"id":"...","name":"...","modelId":"...","keyPreview":"oxy_AbCd…WxYz","createdAt":0}, ...]`.
+`[{"id":"...","name":"...","modelId":"...","keyPreview":"vaeltrix_AbCd…WxYz","createdAt":0}, ...]`.
 **Key lengkap TIDAK lagi dikirim di sini** (cuma preview termasker) — lihat CRITICAL-2 di
 `SECURITY-AUDIT.md`. Kalau butuh key lengkap lagi, harus bikin key baru (gak ada cara "reveal").
 
@@ -228,11 +228,11 @@ Alias publik `/api/keys` & `/v1/chat` (`modelId`) → model publik di atas — p
 `APIKEY_MODEL_CATALOG` di frontend:
 
 `auto-model→openrouter/free`, `spectrax→spectrax`, `vaneus-4.0→vaneus-4.0`,
-`oxy-nemotron→nvidia/llama-3.3-nemotron-super-49b-v1.5`, `oxy-deepseek-r1→deepseek-ai/deepseek-r1`,
-`oxy-llama-70b-n→meta/llama-3.3-70b-instruct`, `oxy-sonar-reasoning→sonar-reasoning-pro`,
-`oxy-sonar-pro→sonar-pro`, `oxy-sonar→sonar`, `oxy-sonar-deep-research→sonar-deep-research`,
-`oxy-thinking→qwen/qwen3.6-27b`, `oxy-vision→openai/gpt-oss-20b`, `oxy-ultra→openai/gpt-oss-120b`,
-`oxy-expert→llama-3.3-70b-versatile`, `oxy-fast→llama-3.1-8b-instant`.
+`vaeltrix-nemotron→nvidia/llama-3.3-nemotron-super-49b-v1.5`, `vaeltrix-deepseek-r1→deepseek-ai/deepseek-r1`,
+`vaeltrix-llama-70b-n→meta/llama-3.3-70b-instruct`, `vaeltrix-sonar-reasoning→sonar-reasoning-pro`,
+`vaeltrix-sonar-pro→sonar-pro`, `vaeltrix-sonar→sonar`, `vaeltrix-sonar-deep-research→sonar-deep-research`,
+`vaeltrix-thinking→qwen/qwen3.6-27b`, `vaeltrix-vision→openai/gpt-oss-20b`, `vaeltrix-ultra→openai/gpt-oss-120b`,
+`vaeltrix-expert→llama-3.3-70b-versatile`, `vaeltrix-fast→llama-3.1-8b-instant`.
 
 ## Storage
 
@@ -259,7 +259,7 @@ Alias publik `/api/keys` & `/v1/chat` (`modelId`) → model publik di atas — p
 
 ### A. Kontrak frontend yang ditemukan (endpoint, method, header, payload, response)
 Semua endpoint di atas ditemukan dengan menelusuri titik kontak `fetch(SERVER_URL...)` /
-`callOxyAPI(...)` di: `01-config-provider.js` (`/api/chat`), `04-account-settings.js`
+`callVaeltrixAPI(...)` di: `01-config-provider.js` (`/api/chat`), `04-account-settings.js`
 (`/api/redeem`), `05-thinking-effort.js` (pemakaian `/api/chat` untuk vision & judul),
 `08-streaming.js` (Multi Chat, tetap lewat `/api/chat`, `stream:false`, paralel),
 `09-send-status.js` (chat normal + SSE parser + health check `GET /` + `/api/promo-featured`),
@@ -271,9 +271,9 @@ lewat backend — sesuai temuan, tidak dibuatkan endpoint baru untuk itu.
 ### B. Provider mapping
 Lihat tabel di atas. Detail penting hasil audit:
 - **`qwen/qwen3.6-27b`** adalah SATU-SATUNYA model vision (`VISION_MODEL` di frontend), walau di
-  dropdown model berlabel **"Oxy Thinking"** (bukan "Oxy Vision"). Ini bukan salah ketik hasil
+  dropdown model berlabel **"Vaeltrix Thinking"** (bukan "Vaeltrix Vision"). Ini bukan salah ketik hasil
   reconstruction — persis begitu di source frontend-nya (`01-config-provider.js` baris
-  `VISION_MODEL = 'qwen/qwen3.6-27b'`, sementara alias `oxy-vision` di katalog API key malah
+  `VISION_MODEL = 'qwen/qwen3.6-27b'`, sementara alias `vaeltrix-vision` di katalog API key malah
   menunjuk ke `openai/gpt-oss-20b`, model teks biasa di Groq). Backend mengikuti persis kondisi
   ini apa adanya, tidak "diperbaiki".
 - ID model `qwen/qwen3.6-27b` tidak berhasil dikonfirmasi sebagai model yang benar-benar ada di
