@@ -10,11 +10,11 @@ test('/api/keys (jalur anonim/device-id, tanpa login)', async (t) => {
   await t.test('create key -> 201, balikin key mentah (SEKALI, pas dibuat)', async () => {
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Key A', modelId: 'oxy-fast', createdBy: 'anon-device-aaa' }),
+      body: JSON.stringify({ name: 'Key A', modelId: 'vaeltrix-fast', createdBy: 'anon-device-aaa' }),
     });
     const data = await res.json();
     assert.equal(res.status, 201);
-    assert.ok(data.key.startsWith('oxy_'));
+    assert.ok(data.key.startsWith('vaeltrix_'));
   });
 
   await t.test('list balikin ARRAY langsung (bukan {data:[...]}), key mentah TIDAK muncul lagi (cuma keyPreview)', async () => {
@@ -23,7 +23,7 @@ test('/api/keys (jalur anonim/device-id, tanpa login)', async (t) => {
     assert.ok(Array.isArray(list));
     assert.equal(list.length, 1);
     assert.equal(list[0].key, undefined, 'field key mentah gak boleh ada lagi di listing');
-    assert.ok(list[0].keyPreview.startsWith('oxy_'));
+    assert.ok(list[0].keyPreview.startsWith('vaeltrix_'));
     assert.ok(list[0].keyPreview.includes('\u2026'), 'dimasking, bukan full key');
   });
 
@@ -47,7 +47,7 @@ test('/api/keys (jalur anonim/device-id, tanpa login)', async (t) => {
   await t.test('API KEY LIMIT: owner yang sama gak bisa bikin key ke-2 (flat limit sesuai PLANS.*.keyLimit = 1x)', async () => {
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Key A2', modelId: 'oxy-fast', createdBy: 'anon-device-aaa' }),
+      body: JSON.stringify({ name: 'Key A2', modelId: 'vaeltrix-fast', createdBy: 'anon-device-aaa' }),
     });
     const data = await res.json();
     assert.equal(res.status, 409);
@@ -59,7 +59,7 @@ test('/api/keys (jalur anonim/device-id, tanpa login)', async (t) => {
     await fetch(baseUrl + `/api/keys/${mine[0].id}?createdBy=anon-device-aaa`, { method: 'DELETE' });
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Key A3', modelId: 'oxy-fast', createdBy: 'anon-device-aaa' }),
+      body: JSON.stringify({ name: 'Key A3', modelId: 'vaeltrix-fast', createdBy: 'anon-device-aaa' }),
     });
     assert.equal(res.status, 201);
   });
@@ -70,7 +70,7 @@ test('/api/keys (jalur anonim/device-id, tanpa login)', async (t) => {
       Array.from({ length: 10 }, () =>
         fetch(baseUrl + '/api/keys', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: 'Race', modelId: 'oxy-fast', createdBy: owner }),
+          body: JSON.stringify({ name: 'Race', modelId: 'vaeltrix-fast', createdBy: owner }),
         })
       )
     );
