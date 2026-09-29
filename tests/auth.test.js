@@ -13,7 +13,7 @@ test('ownership berbasis Supabase auth (perbaikan IDOR)', async (t) => {
   await t.test('createdBy BERBENTUK EMAIL tanpa token -> 401 (celah IDOR lama, sekarang ditolak)', async () => {
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'x', modelId: 'oxy-fast', createdBy: 'nia@example.com' }),
+      body: JSON.stringify({ name: 'x', modelId: 'vaeltrix-fast', createdBy: 'nia@example.com' }),
     });
     const data = await res.json();
     assert.equal(res.status, 401);
@@ -23,7 +23,7 @@ test('ownership berbasis Supabase auth (perbaikan IDOR)', async (t) => {
   await t.test('createdBy BUKAN email (device id anonim) tanpa token -> tetap jalan seperti biasa (gak regresi)', async () => {
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'x', modelId: 'oxy-fast', createdBy: 'anon-device-zzz' }),
+      body: JSON.stringify({ name: 'x', modelId: 'vaeltrix-fast', createdBy: 'anon-device-zzz' }),
     });
     assert.equal(res.status, 201);
   });
@@ -31,7 +31,7 @@ test('ownership berbasis Supabase auth (perbaikan IDOR)', async (t) => {
   await t.test('Bearer token TIDAK valid -> 401, bukan diem-diem dianggap anonim', async () => {
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer token-ngasal-salah' },
-      body: JSON.stringify({ name: 'x', modelId: 'oxy-fast', createdBy: 'siapa-aja@example.com' }),
+      body: JSON.stringify({ name: 'x', modelId: 'vaeltrix-fast', createdBy: 'siapa-aja@example.com' }),
     });
     const data = await res.json();
     assert.equal(res.status, 401);
@@ -42,7 +42,7 @@ test('ownership berbasis Supabase auth (perbaikan IDOR)', async (t) => {
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer token-valid-nia' },
       // createdBy sengaja diisi email ORANG LAIN buat mastiin server BENERAN ngabaiin ini
-      body: JSON.stringify({ name: 'Key Nia', modelId: 'oxy-fast', createdBy: 'budi@example.com' }),
+      body: JSON.stringify({ name: 'Key Nia', modelId: 'vaeltrix-fast', createdBy: 'budi@example.com' }),
     });
     assert.equal(res.status, 201);
 
@@ -67,7 +67,7 @@ test('ownership berbasis Supabase auth (perbaikan IDOR)', async (t) => {
     const apiKeyRepo = require('../src/db/repositories/apikey.repo');
     const { generateId, generateApiKey } = require('../src/utils/id');
     apiKeyRepo.create({
-      id: generateId('key'), name: 'Key Lama Era createdBy', modelId: 'oxy-fast',
+      id: generateId('key'), name: 'Key Lama Era createdBy', modelId: 'vaeltrix-fast',
       owner: 'nia@example.com', key: generateApiKey(), status: 'active', createdAt: Date.now(), lastUsedAt: null,
     });
     const listAsNia = await (await fetch(baseUrl + '/api/keys', { headers: { Authorization: 'Bearer token-valid-nia' } })).json();
@@ -78,7 +78,7 @@ test('ownership berbasis Supabase auth (perbaikan IDOR)', async (t) => {
     // Nia dari test sebelumnya udah punya >=1 key aktif -> percobaan bikin lagi harus kena limit.
     const res = await fetch(baseUrl + '/api/keys', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer token-valid-nia' },
-      body: JSON.stringify({ name: 'Key Nia Kedua', modelId: 'oxy-fast' }),
+      body: JSON.stringify({ name: 'Key Nia Kedua', modelId: 'vaeltrix-fast' }),
     });
     assert.equal(res.status, 409);
   });
