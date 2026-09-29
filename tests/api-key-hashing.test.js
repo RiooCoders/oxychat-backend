@@ -15,10 +15,10 @@ test('HIGH-5: API key disimpan sebagai hash, bukan plaintext lagi', async (t) =>
     await fetch(baseUrl + '/api/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Key Hash Test', modelId: 'oxy-fast', createdBy: 'anon-hash-test-device' }),
+      body: JSON.stringify({ name: 'Key Hash Test', modelId: 'vaeltrix-fast', createdBy: 'anon-hash-test-device' }),
     })
   ).json();
-  assert.ok(created.key.startsWith('oxy_'));
+  assert.ok(created.key.startsWith('vaeltrix_'));
 
   const apiKeyRepo = require('../src/db/repositories/apikey.repo');
   const stored = apiKeyRepo.listByOwner('anon-hash-test-device')[0];
@@ -39,7 +39,7 @@ test('HIGH-5: API key disimpan sebagai hash, bukan plaintext lagi', async (t) =>
   await t.test('key acak/salah tetap ditolak 401 seperti biasa', async () => {
     const res = await fetch(baseUrl + '/v1/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer oxy_bukan-key-asli-sama-sekali' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer vaeltrix_bukan-key-asli-sama-sekali' },
       body: JSON.stringify({ messages: [{ role: 'user', content: 'halo' }], stream: false }),
     });
     assert.equal(res.status, 401);
@@ -57,7 +57,7 @@ test('HIGH-5: key lama (plaintext, belum dimigrasi) tetap bisa auth lewat fallba
   const { generateId, generateApiKey } = require('../src/utils/id');
   const legacyKey = generateApiKey();
   apiKeyRepo.create({
-    id: generateId('key'), name: 'Key Lama Belum Migrasi', modelId: 'oxy-fast',
+    id: generateId('key'), name: 'Key Lama Belum Migrasi', modelId: 'vaeltrix-fast',
     owner: 'anon-legacy-device', key: legacyKey, status: 'active', createdAt: Date.now(), lastUsedAt: null,
   });
 
