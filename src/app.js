@@ -45,7 +45,7 @@ function createApp() {
   app.get('/', (req, res) => {
     res.status(200).json({
       status: 'ok',
-      service: 'OxyChat API',
+      service: 'VaeltrixAI - Server - Online',
       providers: env.providerAvailable,
     });
   });
