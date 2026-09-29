@@ -1,24 +1,4 @@
-#!/usr/bin/env node
 'use strict';
-
-/**
- * Migrasi HIGH-4 (audit lanjutan): API key yang sebelumnya disimpan APA ADANYA (field `key`,
- * plaintext) diubah jadi `keyHash` (SHA-256) + `keyPreview` (8 char depan + 4 char belakang —
- * SUDAH aman ditampilkan berkali-kali, beda dari key aslinya). Setelah migrasi, field `key`
- * (plaintext) DIHAPUS SAMA SEKALI dari row-nya — kalau file database ini bocor, secret API key
- * TIDAK bisa dipakai langsung lagi (harus di-brute-force dari hash — lihat utils/id.js buat
- * kenapa itu gak feasible untuk key yang di-generate acak >200 bit).
- *
- * AMAN dijalankan berkali-kali (idempotent) — row yang udah punya `keyHash` dilewatin begitu aja.
- *
- * KAPAN JALANIN INI: SEKALI, SEBELUM (atau bersamaan dengan) deploy versi backend yang sudah
- * pakai kode keyHash ini. Backend versi baru TETAP bisa auth key lama yang belum sempat
- * dimigrasi (lihat apikey.repo.js findByRawKeyLegacy — fallback transisi), jadi urutan persis
- * "sebelum vs sesudah" gak fatal, tapi lebih baik dijalankan secepatnya biar semua key konsisten
- * ke bentuk hash & fallback transisi itu gak perlu dipertahankan lama-lama.
- *
- * Pemakaian: node scripts/migrate-api-key-hashes.js
- */
 
 const { getDb } = require('../src/db/database');
 const { hashApiKey, previewApiKey } = require('../src/utils/id');
