@@ -68,6 +68,7 @@ test('/api/chat request handling', async (t) => {
 
   await t.test('provider mengembalikan 401 -> dinormalisasi jadi 502 PROVIDER_AUTH_ERROR (gak leak raw)', async () => {
     mockUpstream.scenario['key-groq'] = 'auth_fail';
+    mockUpstream.scenario['key-openrouter'] = 'auth_fail'; // cadangan OpenRouter juga gagal -> error PROVIDER UTAMA yang dilaporin
     const res = await fetch(baseUrl + '/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: 'x' }] }),
@@ -77,10 +78,12 @@ test('/api/chat request handling', async (t) => {
     assert.equal(data.error.code, 'PROVIDER_AUTH_ERROR');
     assert.ok(!JSON.stringify(data).includes('key-groq'));
     mockUpstream.scenario['key-groq'] = 'ok';
+    mockUpstream.scenario['key-openrouter'] = 'ok';
   });
 
   await t.test('provider 404 model -> 502 PROVIDER_MODEL_UNAVAILABLE', async () => {
     mockUpstream.scenario['key-groq'] = 'model_not_found';
+    mockUpstream.scenario['key-openrouter'] = 'model_not_found';
     const res = await fetch(baseUrl + '/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: 'x' }] }),
@@ -89,6 +92,7 @@ test('/api/chat request handling', async (t) => {
     assert.equal(res.status, 502);
     assert.equal(data.error.code, 'PROVIDER_MODEL_UNAVAILABLE');
     mockUpstream.scenario['key-groq'] = 'ok';
+    mockUpstream.scenario['key-openrouter'] = 'ok';
   });
 
   await t.test('provider gak tersedia (kosong) -> 502 jelas, bukan fake 200', async () => {
