@@ -30,9 +30,27 @@ const ALL_KNOWN_MODELS = new Set([
 const VISION_MODELS = ['qwen/qwen3.6-27b'];
 
 const DEFAULT_UPSTREAM_REMAP = {
+  // Groq udah mensunset 2 model llama ini (16 Aug 2026), id publiknya tetap dipakai frontend.
   'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
   'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
+  // Groq men-deprecate qwen3.6-27b, penggantinya qwen3.8-27b (sama-sama multimodal/vision).
+  'qwen/qwen3.6-27b': 'qwen/qwen3.8-27b',
 };
+
+// Kalau model Groq kena rate limit / kepanjangan / mati, coba "saudara"-nya dulu (kuota Groq
+// dihitung PER MODEL, jadi saudara biasanya masih longgar) baru lari ke OpenRouter.
+// Request bergambar (vision) cuma boleh ke model yang support gambar.
+const GROQ_SIBLING_FALLBACKS = {
+  'openai/gpt-oss-120b': ['openai/gpt-oss-20b'],
+  'openai/gpt-oss-20b': ['openai/gpt-oss-120b'],
+  'qwen/qwen3.8-27b': ['qwen/qwen3.6-27b', 'openai/gpt-oss-120b'],
+  'qwen/qwen3.6-27b': ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'],
+};
+const GROQ_VISION_UPSTREAM = new Set(['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b']);
+
+// OpenRouter: "openrouter/auto" itu router BERBAYAR (402 kalau saldo kosong). "openrouter/free"
+// router khusus model gratis. Dipakai sebagai cadangan terakhir.
+const OPENROUTER_FREE_MODEL = 'openrouter/free';
 
 function resolveProvider(model) {
   if (SPECTRAX_MODELS.includes(model)) return 'spectrax';
@@ -87,6 +105,9 @@ module.exports = {
   PASSTHROUGH_CHAT_FIELDS,
   GROQ_REASONING_FIELDS,
   DEFAULT_UPSTREAM_REMAP,
+  GROQ_SIBLING_FALLBACKS,
+  GROQ_VISION_UPSTREAM,
+  OPENROUTER_FREE_MODEL,
   resolveProvider,
   resolveUpstreamModel,
 };
