@@ -11,7 +11,7 @@ function logProviderStatus() {
   }
   if (!env.anyProviderAvailable) {
     logger.warn('no_provider_configured', {
-      note: 'Semua provider API key kosong — server tetap jalan, tapi /api/chat & /v1/chat akan selalu gagal sampai minimal 1 provider dikonfigurasi di .env',
+      note: 'Semua Provider APIKey Kosong — Server Tetap Jalan, Tapi /api/chat & /v1/chat Akan Selalu Gagal Sampai Minimal 1 Provider Dikonfigurasi Di .env',
     });
   }
 }
