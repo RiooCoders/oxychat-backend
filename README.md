@@ -1,5 +1,11 @@
 # VaeltrixAI Backend (rekonstruksi)
 
+> **Update 30 Sep 2026** — filter thinking stateful, fallback provider berurutan (model "saudara" Groq -> OpenRouter),
+> klasifikasi error upstream (402/413/429/decommissioned), dan terjemahan parameter reasoning per model.
+> Detail + langkah deploy: lihat `CATATAN-PERBAIKAN.md`. Field request baru: `show_thinking` (true = kirim reasoning
+> lewat `delta.reasoning_content`, tanpa ini reasoning dibuang total).
+
+
 Backend hasil reverse-engineering dari frontend **VaeltrixAI** (folder `chat/` beserta
 `CreateApikey/` dan `Request-Update/`). Backend asli project ini hilang; source code di sini
 dibangun ulang murni dari kontrak yang benar-benar dipanggil frontend (lihat bagian **Laporan
@@ -221,7 +227,7 @@ Model publik (dikirim frontend apa adanya) → provider (dihitung server, bukan 
 | `nvidia/llama-3.3-nemotron-super-49b-v1.5`, `deepseek-ai/deepseek-r1`, `meta/llama-3.3-70b-instruct` | nvidia | sama persis |
 | `vaneus-4.0` | mistral | `MISTRAL_MODEL` (default `mistral-large-latest`) |
 | `sonar-reasoning-pro`, `sonar-pro`, `sonar`, `sonar-deep-research` | perplexity | sama persis |
-| `openrouter/free` | openrouter | `OPENROUTER_MODEL` (default `openrouter/auto`, Auto Router resminya OpenRouter) |
+| `openrouter/free` | openrouter | `OPENROUTER_MODEL` (default `openrouter/free` = router model GRATIS. `openrouter/auto` itu router berbayar: 402 kalau saldo kosong) |
 | `spectrax` | *(gabungan)* | coba `GEMINI_MODEL` dulu, fallback ke NVIDIA (`SPECTRAX_FALLBACK_MODEL`) kalau Gemini gagal karena availability |
 
 Alias publik `/api/keys` & `/v1/chat` (`modelId`) → model publik di atas — persis
