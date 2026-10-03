@@ -61,7 +61,8 @@ const env = {
   },
 
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-  openrouterModel: process.env.OPENROUTER_MODEL || 'openrouter/auto',
+  // Default "openrouter/free" (router model gratis). "openrouter/auto" itu router berbayar -> 402 kalau saldo kosong.
+  openrouterModel: process.env.OPENROUTER_MODEL || 'openrouter/free',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-flash-latest',
   spectraxFallbackModel:
     process.env.SPECTRAX_FALLBACK_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
