@@ -1,9 +1,10 @@
 'use strict';
 
-const { Readable, Transform } = require('node:stream');
+const { Readable } = require('node:stream');
 const logger = require('./logger');
 const { ApiError, internal } = require('./errors');
-const { sanitizeSseDataLine } = require('./sanitize-content');
+const { createSseFilterTransform } = require('./sse-think-filter');
+const { sanitizeCompletionPayload } = require('./sanitize-content');
 
 function sendError(res, err) {
   const apiErr = err instanceof ApiError ? err : internal(err.message, 'INTERNAL_ERROR', { cause: err });
@@ -15,48 +16,7 @@ function sendError(res, err) {
   res.status(apiErr.status).json(body);
 }
 
-/**
- * Transform stream: filter reasoning leak di SSE chunk demi chunk.
- * Buffer partial lines biar JSON SSE gak kepotong di tengah.
- */
-function createSseSanitizeTransform() {
-  let buffer = '';
-  return new Transform({
-    transform(chunk, _enc, cb) {
-      try {
-        buffer += chunk.toString('utf8');
-        const parts = buffer.split('\n');
-        buffer = parts.pop() || '';
-        let out = '';
-        for (const part of parts) {
-          const line = part.endsWith('\r') ? part.slice(0, -1) : part;
-          if (line.startsWith('data:')) {
-            out += sanitizeSseDataLine(line) + '\n';
-          } else {
-            out += part + '\n';
-          }
-        }
-        if (out) this.push(out);
-        cb();
-      } catch (err) {
-        cb(err);
-      }
-    },
-    flush(cb) {
-      try {
-        if (buffer) {
-          if (buffer.startsWith('data:')) this.push(sanitizeSseDataLine(buffer) + '\n');
-          else this.push(buffer);
-        }
-        cb();
-      } catch (err) {
-        cb(err);
-      }
-    },
-  });
-}
-
-function pipeSse(res, upstreamResponse) {
+function pipeSse(res, upstreamResponse, { keepThinking = false } = {}) {
   res.status(200);
   res.set({
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -67,7 +27,7 @@ function pipeSse(res, upstreamResponse) {
   res.flushHeaders?.();
 
   const nodeStream = Readable.fromWeb(upstreamResponse.body);
-  const sanitize = createSseSanitizeTransform();
+  const sanitize = createSseFilterTransform({ keepThinking });
   let closedByClient = false;
 
   res.on('close', () => {
@@ -108,10 +68,10 @@ async function runChatAndRespond(req, res, chatPromiseFactory) {
   try {
     const result = await chatPromiseFactory(controller.signal);
     if (result.stream) {
-      pipeSse(res, result.upstream);
+      pipeSse(res, result.upstream, { keepThinking: Boolean(result.keepThinking) });
     } else {
-      const { sanitizeCompletionPayload } = require('./sanitize-content');
-      res.status(200).json(sanitizeCompletionPayload(result.data));
+      // idempotent: data sudah dinormalisasi di chat.service, ini cuma jaring pengaman kedua
+      res.status(200).json(sanitizeCompletionPayload(result.data, { keepThinking: Boolean(result.keepThinking) }));
     }
   } catch (err) {
     if (controller.signal.aborted) return;
