@@ -26,6 +26,7 @@ test('security hardening', async (t) => {
 
   await t.test('error provider TIDAK pernah bocorin API key server ke client', async () => {
     mockUpstream.scenario['key-groq'] = 'auth_fail';
+    mockUpstream.scenario['key-openrouter'] = 'auth_fail';
     const res = await fetch(baseUrl + '/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: 'x' }] }),
@@ -34,6 +35,7 @@ test('security hardening', async (t) => {
     assert.ok(!text.includes('key-groq'));
     assert.ok(!text.toLowerCase().includes('bearer'));
     mockUpstream.scenario['key-groq'] = 'ok';
+    mockUpstream.scenario['key-openrouter'] = 'ok';
   });
 
   await t.test('/api/promo-featured gak bocorin daftar kode/usage/admin data', async () => {
