@@ -60,6 +60,9 @@ Lihat `.env.example` untuk daftar lengkap + penjelasan tiap variabel. Ringkasnya
 - `API_KEY_LIMIT_PER_OWNER`, `CHAT_RATE_LIMIT_PER_MIN`, `V1_CHAT_RATE_LIMIT_PER_KEY`,
   `V1_CHAT_RATE_LIMIT_PER_IP` — limit & rate limit (lihat `CHANGELOG-HARDENING.md`).
 - `DATABASE_PATH` — lokasi file storage (lihat "Storage").
+- `WEB_SEARCH_*`, `ANTI_HALLUCINATION_POLICY`, `APP_TIMEZONE` — pencarian web real-time (DuckDuckGo) &
+  aturan anti-halusinasi. Semuanya punya default yang masuk akal, jadi **tidak wajib diisi**. Daftar
+  lengkap + penjelasan ada di `.env.web-search.example` dan bagian "Pencarian web real-time" di bawah.
 
 ## Struktur folder
 
@@ -71,16 +74,20 @@ backend/
 │   ├── routes/                POST/GET/DELETE per endpoint -> controller
 │   ├── controllers/           HTTP plumbing (parse req, kirim res, relay SSE)
 │   ├── services/               business logic (validasi, orkestrasi provider, redeem, api-key,
-│   │                              supabase-auth.service.js buat verifikasi sesi login)
+│   │                              supabase-auth.service.js buat verifikasi sesi login,
+│   │                              web-search.service.js = DuckDuckGo, web-context.service.js = otak pencarian)
 │   ├── providers/               1 file per provider AI (Groq/NVIDIA/Mistral/Perplexity/OpenRouter/Gemini)
 │   ├── middleware/              cors, rate-limit, error-handler, api-key-auth,
 │   │                              optional-supabase-auth, security-headers
 │   ├── db/                       storage (SQLite bawaan Node / fallback JSON) + repositories +
 │   │                                dukungan transaksi (database.js: transaction())
-│   ├── config/                    env.js, models.js (registry model/provider terpusat)
-│   └── utils/                      errors, logger (auto-redact secret), validation, id, sse relay
+│   ├── config/                    env.js, models.js (registry model/provider terpusat),
+│   │                                  system-policy.js (aturan jujur/anti-halusinasi + waktu server)
+│   └── utils/                      errors, logger (auto-redact secret), validation, id, sse relay,
+│                                      safe-fetch.js (anti-SSRF), html-text.js, abort.js, rate-window.js
 ├── scripts/admin.js            CLI internal (kelola redeem code & promo featured)
-├── tests/                       automated test (node:test bawaan, `npm test`, 79 test)
+├── scripts/test-web-search.js  uji LIVE pencarian web (`npm run search:test`, butuh internet)
+├── tests/                       automated test (node:test bawaan, `npm test`)
 ├── data/                          file database (di-gitignore)
 ├── CHANGELOG-HARDENING.md        ringkasan perbaikan keamanan + migrasi kontrak frontend
 └── SECURITY-AUDIT.md             detail tiap temuan (severity/root cause/impact/fix/test)
@@ -123,6 +130,18 @@ benar dari `model` (registry di `src/config/models.js`), supaya kombinasi model+
 tidak cocok tidak bisa diselundupkan. `reasoning_effort`/`reasoning_format` hanya diteruskan ke
 upstream kalau modelnya jatuh ke provider Groq (sesuai frontend, `getReasoningExtraParams()`).
 
+Field tambahan **opsional** (dibaca server, TIDAK diteruskan ke provider):
+
+| Field | Arti |
+|---|---|
+| `web_search` | `false` = jangan cari di web untuk pesan ini (toggle user dimatikan). `true`/`"auto"`/tidak dikirim = server memutuskan sendiri per pesan (mode `auto`). `"always"` = selalu cari (kecuali basa-basi). |
+| `client_timezone` | Zona waktu IANA perangkat (mis. `Asia/Makassar`). Dipakai buat jawaban "hari ini / jam berapa". Kalau kosong/tidak valid: `APP_TIMEZONE` (default `Asia/Jakarta`). |
+| `utility` | `true` = panggilan internal frontend (judul chat, deskripsi gambar): server **tidak** menambah aturan jujur dan **tidak** mencari. Diabaikan di `/v1/chat`. |
+
+Selain jawaban model, server menempelkan **aturan jujur/anti-halusinasi** di system message pertama
+(menang atas persona) dan — kalau pesannya butuh data segar — **hasil pencarian web** di pesan user
+terakhir. Detailnya ada di bagian "Pencarian web real-time" di bawah.
+
 Non-stream response — OpenAI-compatible:
 ```json
 {
@@ -140,6 +159,20 @@ data: {"choices":[{"delta":{"content":"lo"}}]}
 
 data: [DONE]
 ```
+
+Kalau pencarian web dijalankan, response **non-stream** memuat tambahan `vaeltrix.web`
+(`state: "used"|"failed"`, `query`, `searchedAt`, `sources:[{n,title,url,domain,published,read}]`), dan
+response **stream** diawali chunk khusus (tanpa `choices`, hanya dikirim ke `/api/chat`, tidak ke `/v1/chat`):
+```
+data: {"vaeltrix":{"status":"searching"}}
+
+data: {"vaeltrix":{"web":{"state":"used","sources":[...]}}}
+
+data: {"choices":[{"delta":{"content":"Ha"}}]}
+```
+Karena header SSE sudah terkirim begitu pencarian dimulai, error provider **setelah itu** dikirim sebagai
+chunk `data: {"error":{"message":"...","code":"..."}}` lalu `data: [DONE]` (status HTTP tetap 200).
+Error yang terjadi tanpa pencarian tetap berupa status non-2xx seperti biasa.
 
 Error: status non-2xx, body `{"error":{"message":"...","code":"..."}}`.
 
@@ -203,6 +236,11 @@ Model **selalu** ditentukan oleh `modelId` yang dipilih pas bikin key (client ti
 tidak bisa, override lewat `model` di body). **Rate limit 2 lapis** (baru): per API key
 (`V1_CHAT_RATE_LIMIT_PER_KEY`, default 60/menit) dan per IP (`V1_CHAT_RATE_LIMIT_PER_IP`, default
 120/menit, berlaku bahkan buat percobaan auth yang gagal) — `429` kalau kelewat.
+
+**Pencarian web di `/v1/chat` bersifat opt-in**: kirim `"web_search": true` di body kalau mau.
+Tanpa itu, perilakunya sama seperti sebelumnya (hanya ditambah aturan jujur di system message).
+Kalau diaktifkan, model diminta menyebut sumber dengan **nama situs** (mis. `(reuters.com)`), response
+non-stream memuat `vaeltrix.web.sources`, dan stream tetap murni OpenAI-compatible (tanpa chunk khusus).
 
 ## CLI Admin (`npm run admin`)
 
@@ -342,6 +380,63 @@ kecil (tambah Supabase SDK, baca `keyPreview` bukan `key`) — lihat `CHANGELOG-
 detail FILE/OLD/NEW/REASON/IMPACT/MIGRATION lengkap. Sisanya (`chat/index.html`,
 `Request-Update/`) tetap tidak berubah sama sekali.
 
+## Pencarian web real-time & aturan anti-halusinasi
+
+**Cara kerja (per pesan, di server):**
+1. `web-context.service.js` memutuskan perlu cari atau tidak (mode `auto`): pertanyaan fakta, topik yang
+   cepat berubah (berita, harga, skor, jabatan, versi), permintaan eksplisit ("cari di web", "sumbernya")
+   → **cari**. Basa-basi, curhat, permintaan kreatif/kode, soal gambar/file, dan matematika → **skip**
+   (tidak buang waktu). Ada tautan di pesan → **buka tautannya langsung** (model sering pura-pura
+   membaca tautan; sekarang dia beneran membacanya).
+2. `web-search.service.js` mencari di DuckDuckGo (endpoint HTML, fallback ke Lite) dengan filter waktu
+   otomatis ("hari ini" → 24 jam), lalu membuka maksimal `WEB_SEARCH_READ_PAGES` halaman teratas lewat
+   `safe-fetch.js` dan memilih paragraf yang paling nyambung dengan pertanyaan.
+3. Hasilnya dirakit jadi blok bernomor (judul, situs, **tanggal terbit**, URL, isi) yang ditempel ke pesan
+   user terakhir. `system-policy.js` menambahkan aturan jujur di system message pertama beserta **waktu
+   server saat itu**.
+4. Frontend menampilkan **sumber asli** dari hasil pencarian (bukan URL yang ditulis model).
+
+**Kenapa DuckDuckGo "Instant Answer API" yang lama diganti:** `api.duckduckgo.com` hanya memberi ringkasan
+ala Wikipedia untuk sebagian kecil query dan kosong untuk kebanyakan pertanyaan, sehingga model tetap
+mengarang. Endpoint HTML/Lite adalah pencarian web yang sebenarnya. Keduanya tidak punya header CORS, jadi
+pencarian **harus** dari server (bukan dari browser seperti kode lama).
+
+**Yang perlu lu tahu (jujur):**
+- Ini *scraping* endpoint publik DuckDuckGo, **bukan API resmi**. DuckDuckGo bisa membatasi IP server
+  (terutama IP datacenter) kalau trafik tinggi. Pengamannya: fallback html→lite, pembatas laju
+  (`WEB_SEARCH_MAX_PER_CLIENT_PER_MIN`, `WEB_SEARCH_MAX_PER_MIN`), dan *circuit breaker* (kalau
+  keduanya diblokir, berhenti mencoba `WEB_SEARCH_BLOCK_COOLDOWN_MS`). Kalau pencarian gagal, model
+  **diberi tahu** dan diminta jujur ke user, UI menampilkan catatan "Pencarian web gagal", dan chat
+  tetap jalan. Gak pernah diam-diam pura-pura berhasil.
+- Kalau DuckDuckGo mengubah markup halamannya, parser bisa berhenti menemukan hasil. Test otomatis
+  memakai fixture (tidak bisa mendeteksi itu), jadi **jalankan `npm run search:test` di server lu**
+  setelah deploy; kalau 0 hasil, jalankan dengan `-- --raw` untuk diagnosa.
+- "Real-time" = diambil langsung saat pesan dikirim, **tanpa cache jangka panjang**. Satu pengecualian
+  sengaja: query yang *identik* dalam `WEB_SEARCH_SHARE_WINDOW_MS` (default 30 dtk) berbagi satu hasil,
+  karena Multi Chat mengirim belasan permintaan bergelombang dan tanpa ini satu pesan memicu beberapa
+  pencarian. Set `0` kalau lu mau benar-benar selalu ambil ulang. Hasil yang gagal tidak pernah dibagikan.
+- Index DuckDuckGo sendiri punya jeda untuk berita yang baru banget terjadi. Aturan anti-halusinasi
+  **mengurangi** halusinasi, bukan menjadikannya 0%: model masih bisa salah baca sumber. Makanya sumber
+  ditampilkan dan tanggal terbit ikut dikirim ke model.
+- Model Perplexity (Sonar) dilewati karena sudah punya pencarian web real-time bawaan.
+- Suhu (temperature) dibatasi `WEB_SEARCH_MAX_TEMPERATURE` (0.7) kalau jawaban memakai hasil pencarian,
+  dan frontend sekarang mengirim 0.7 (sebelumnya 1.0) — 1.0 terlalu "kreatif" untuk jawaban faktual.
+
+**Keamanan (halaman web = input yang tidak dipercaya):**
+- *SSRF*: `safe-fetch.js` hanya http/https port 80/443, tanpa user:pass, IP tujuan dicek **saat koneksi**
+  (menangkap DNS rebinding, IPv6 terselubung, IP desimal/hex), setiap redirect divalidasi ulang, dan ada
+  batas waktu + batas ukuran (setelah dekompresi, kebal zip-bomb).
+- *Prompt injection*: baris di halaman yang mencoba memerintah model ("abaikan instruksi...") dibuang,
+  token spesial model & penanda blok palsu dinetralkan, dan aturan sistem menyuruh model menganggap isi
+  hasil sebagai DATA, bukan perintah. Ini mengurangi risiko, tidak menghilangkannya sepenuhnya.
+- Semua parser linear (tahan HTML sengaja dibuat jahat); judul/URL sumber di UI dirender lewat
+  `textContent`, URL hanya http/https.
+
+**Konfigurasi singkat** (lengkap di `.env.web-search.example`): `WEB_SEARCH_MODE` (`auto` default | `always` |
+`off`), `WEB_SEARCH_READ_PAGES` (3), `WEB_SEARCH_CONTEXT_MAX_CHARS` (3600, naikin kalau provider longgar,
+turunin kalau sering 413/limit token), `WEB_SEARCH_REGION` (`id-id`), `ANTI_HALLUCINATION_POLICY=off`
+(mematikan aturan jujur yang ditempel server).
+
 ## Testing yang sudah dilakukan
 
 **Automated (baru, ikut dikirim di `tests/`, jalan tiap saat lewat `npm test`, tanpa dependency
@@ -363,3 +458,16 @@ kadaluarsa, maxUses tercapai, konkurensi), `/api/promo-featured`,
 dan fallback Spectrax (Gemini gagal → NVIDIA). **Belum** diuji melawan API asli
 Groq/NVIDIA/Mistral/Perplexity/OpenRouter/Gemini — sebelum production, jalankan dulu tes nyata
 dengan API key asli (lihat contoh curl di atas) seperti yang disarankan MASTER PROMPT bagian 59-60.
+
+### Test pencarian web & aturan anti-halusinasi (baru)
+
+`npm test` kini juga menjalankan `html-text`, `safe-fetch`, `web-search`, `web-context`, dan `grounding`
+(tanpa Express & tanpa internet: DuckDuckGo dan provider di-mock; server lokal dipakai buat menguji
+`safe-fetch` termasuk redirect ke IP metadata cloud, zip-bomb, timeout, dan abort). Pengujian (test otomatis
++ uji E2E di Chromium: frontend asli melawan backend asli, DuckDuckGo & provider di-mock) sempat menemukan
+4 masalah di kode sendiri sebelum rilis: handler error abort di `safe-fetch` yang terpasang telat, parser
+DuckDuckGo yang kuadratik pada input jahat, query yang kemasukan topik "halo" saat digabung konteks, dan
+Multi Chat yang memicu pencarian ganda karena permintaan bergelombang. Semuanya sudah diperbaiki dan dijaga test.
+
+**Belum bisa diuji dari lingkungan pembuatan (tanpa internet):** DuckDuckGo yang asli. Fixture HTML
+dimodelkan dari struktur yang dikenal, bukan diambil live. Wajib: `npm run search:test` di server lu.
