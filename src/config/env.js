@@ -7,6 +7,24 @@ function parseIntEnv(name, fallback) {
   return Number.isFinite(v) && v > 0 ? v : fallback;
 }
 
+/** Sama seperti parseIntEnv tapi 0 dianggap valid (mis. WEB_SEARCH_READ_PAGES=0 = jangan buka halaman). */
+function parseIntEnvAllowZero(name, fallback) {
+  const v = parseInt(process.env[name], 10);
+  return Number.isFinite(v) && v >= 0 ? v : fallback;
+}
+
+/** Nama zona waktu IANA yang valid (mis. Asia/Jakarta), kalau gak valid -> fallback. */
+function parseTimezone(raw, fallback) {
+  const tz = String(raw || '').trim();
+  if (!tz) return fallback;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: tz });
+    return tz;
+  } catch (_) {
+    return fallback;
+  }
+}
+
 function parseOrigins(raw) {
   if (!raw || raw.trim() === '' || raw.trim() === '*') return '*';
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
@@ -85,6 +103,41 @@ const env = {
   v1RateLimitPerIpPerMin: parseIntEnv('V1_CHAT_RATE_LIMIT_PER_IP', 120),
   chatRateLimitPerMin: parseIntEnv('CHAT_RATE_LIMIT_PER_MIN', 60),
   chatRateLimitPerIpPerMin: parseIntEnv('CHAT_RATE_LIMIT_PER_IP', 180),
+
+  // ---------- Web search real-time (DuckDuckGo) + aturan anti-halusinasi ----------
+  // WEB_SEARCH_MODE: auto (default) = cari kecuali pesannya basa-basi/kreatif/kode murni; always = selalu cari; off = matiin total.
+  webSearch: {
+    mode: ['off', 'auto', 'always'].includes(String(process.env.WEB_SEARCH_MODE || '').toLowerCase())
+      ? String(process.env.WEB_SEARCH_MODE).toLowerCase()
+      : 'auto',
+    maxResults: parseIntEnv('WEB_SEARCH_MAX_RESULTS', 5),
+    readPages: parseIntEnvAllowZero('WEB_SEARCH_READ_PAGES', 3),
+    searchTimeoutMs: parseIntEnv('WEB_SEARCH_TIMEOUT_MS', 5000),
+    pageTimeoutMs: parseIntEnv('WEB_SEARCH_PAGE_TIMEOUT_MS', 4500),
+    // Total karakter blok hasil pencarian yang ditempel ke prompt. Dijaga kecil karena limit token/menit
+    // Groq free tier ketat (lihat CATATAN-PERBAIKAN.md). Naikin kalau providernya longgar.
+    contextMaxChars: parseIntEnv('WEB_SEARCH_CONTEXT_MAX_CHARS', 3600),
+    blockCooldownMs: parseIntEnv('WEB_SEARCH_BLOCK_COOLDOWN_MS', 60000),
+    // Query IDENTIK dalam jendela ini berbagi satu hasil (bukan cache jangka panjang). Perlu karena browser cuma membuka
+    // ~6 koneksi paralel per host: Multi Chat (banyak model) mengirim permintaan BERGELOMBANG, bukan serentak.
+    // 0 = hanya berbagi selama pencarian masih berjalan. Hasil yang gagal tidak pernah dibagikan ulang.
+    shareWindowMs: parseIntEnvAllowZero('WEB_SEARCH_SHARE_WINDOW_MS', 30000),
+    // Wilayah hasil DuckDuckGo (format xx-xx, mis. id-id, us-en, wt-wt = global).
+    region: /^[a-z]{2}-[a-z]{2}$/.test(String(process.env.WEB_SEARCH_REGION || '').toLowerCase())
+      ? String(process.env.WEB_SEARCH_REGION).toLowerCase()
+      : 'id-id',
+    // Pembatas laju supaya IP server gak kena blokir DuckDuckGo gara-gara satu pemakai (atau bot) nge-spam.
+    maxPerClientPerMin: parseIntEnv('WEB_SEARCH_MAX_PER_CLIENT_PER_MIN', 10),
+    maxPerMin: parseIntEnv('WEB_SEARCH_MAX_PER_MIN', 40),
+    // Suhu (temperature) dibatasi segini kalau jawaban pakai hasil pencarian: makin tinggi makin "kreatif" = makin gampang ngarang.
+    maxTemperature: (() => {
+      const v = parseFloat(process.env.WEB_SEARCH_MAX_TEMPERATURE);
+      return Number.isFinite(v) && v >= 0 && v <= 2 ? v : 0.7;
+    })(),
+  },
+  // ANTI_HALLUCINATION_POLICY=off buat mematikan aturan kejujuran yang ditempel server ke tiap request.
+  policyEnabled: String(process.env.ANTI_HALLUCINATION_POLICY || '').toLowerCase() !== 'off',
+  timezone: parseTimezone(process.env.APP_TIMEZONE, 'Asia/Jakarta'),
 
   databasePath: process.env.DATABASE_PATH || './data/vaeltrixai.db',
   maxBodyBytes: parseIntEnv('MAX_BODY_BYTES', 15 * 1000 * 1000),
