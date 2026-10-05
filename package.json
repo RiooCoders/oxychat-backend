@@ -1,7 +1,7 @@
 {
-  "name": "oxychat-backend",
-  "version": "1.1.0",
-  "description": "Backend hasil rekonstruksi untuk frontend OxyChat (QwertyChat) — AI gateway, API key system, redeem system, promo endpoint. Sudah melalui audit hardening keamanan (lihat CHANGELOG-HARDENING.md & SECURITY-AUDIT.md).",
+  "name": "vaeltrix-backend",
+  "version": "1.2.0",
+  "description": "Backend Hasil Rekonstruksi Untuk Frontend VaeltrixAI - AI gateway, APIKey System, Redeem System, Promo Endpoint. Sudah Melalui Audit Hardening Keamanan..",
   "main": "src/server.js",
   "private": true,
   "engines": {
@@ -11,7 +11,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "admin": "node scripts/admin.js",
-    "test": "node --test"
+    "test": "node --test",
+    "search:test": "node scripts/test-web-search.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
