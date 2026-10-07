@@ -1,6 +1,6 @@
 {
   "name": "vaeltrix-backend",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Backend Hasil Rekonstruksi Untuk Frontend VaeltrixAI - AI gateway, APIKey System, Redeem System, Promo Endpoint. Sudah Melalui Audit Hardening Keamanan..",
   "main": "src/server.js",
   "private": true,
@@ -12,7 +12,8 @@
     "dev": "node --watch src/server.js",
     "admin": "node scripts/admin.js",
     "test": "node --test",
-    "search:test": "node scripts/test-web-search.js"
+    "search:test": "node scripts/web-search-live.js",
+    "voice:test": "node --test tests/voice-units.test.js tests/voice.test.js tests/voice-config.test.js tests/voice-disabled.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
