@@ -12,6 +12,7 @@ const chatRoutes = require('./routes/chat.routes');
 const keysRoutes = require('./routes/keys.routes');
 const redeemRoutes = require('./routes/redeem.routes');
 const publicRoutes = require('./routes/public.routes');
+const voiceRoutes = require('./routes/voice.routes');
 
 function createApp() {
   const app = express();
@@ -47,12 +48,14 @@ function createApp() {
       status: 'ok',
       service: 'VaeltrixAI - Server - Online',
       providers: env.providerAvailable,
+      voice: { tts: env.voiceAvailable.tts, stt: env.voiceAvailable.stt.any },
     });
   });
 
   app.use('/api', chatRoutes);
   app.use('/api', keysRoutes);
   app.use('/api', redeemRoutes);
+  app.use('/api', voiceRoutes);
   app.use('/v1', publicRoutes);
 
   app.use(notFoundHandler);
