@@ -16,8 +16,15 @@ function logProviderStatus() {
   }
 }
 
+function logVoiceStatus() {
+  const v = env.voiceAvailable;
+  logger.info(`voice_tts_${v.tts ? 'available' : 'unavailable'}`, v.tts ? { provider: 'elevenlabs', models: env.voice.elevenlabs.ttsModels } : { note: 'ELEVENLABS_API_KEY kosong — tombol Dengarkan akan menampilkan pesan "suara belum aktif".' });
+  logger.info(`voice_stt_${v.stt.any ? 'available' : 'unavailable'}`, { groq: v.stt.groq, elevenlabs: v.stt.elevenlabs, mode: env.voice.stt.provider });
+}
+
 function main() {
   logProviderStatus();
+  logVoiceStatus();
   getDb(); // buka/siapin storage lebih awal biar ketauan dari awal kalau ada masalah storage
 
   const app = createApp();
