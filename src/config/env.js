@@ -30,6 +30,15 @@ function parseOrigins(raw) {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+/** Daftar dipisah koma -> array string (trim, buang kosong & duplikat). Kosong -> fallback. */
+function parseList(raw, fallback = []) {
+  const items = String(raw || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return items.length ? [...new Set(items)] : fallback;
+}
+
 /** Trim + buang kutip yang sering ke-copy pas paste di Railway/Vercel. */
 function cleanKey(raw) {
   if (!raw) return '';
@@ -139,6 +148,49 @@ const env = {
   policyEnabled: String(process.env.ANTI_HALLUCINATION_POLICY || '').toLowerCase() !== 'off',
   timezone: parseTimezone(process.env.APP_TIMEZONE, 'Asia/Jakarta'),
 
+  // ---------- Suara: Text-to-Speech (ElevenLabs) + Speech-to-Text (Groq Whisper / ElevenLabs Scribe) ----------
+  // API key SELALU cuma ada di server ini (env), gak pernah dikirim ke frontend. Lihat .env.voice buat penjelasan tiap variabel.
+  voice: {
+    elevenlabs: {
+      apiKey: cleanKey(process.env.ELEVENLABS_API_KEY || process.env.XI_API_KEY),
+      baseUrl: (cleanKey(process.env.ELEVENLABS_BASE_URL) || 'https://api.elevenlabs.io').replace(/\/+$/, ''),
+      // Urutan model: yang pertama dipakai duluan, sisanya cadangan otomatis kalau model sebelumnya ditolak/dihapus ElevenLabs.
+      ttsModels: parseList(process.env.ELEVENLABS_TTS_MODEL, ['eleven_turbo_v2_5', 'eleven_flash_v2_5', 'eleven_multilingual_v2']),
+      outputFormat: cleanKey(process.env.ELEVENLABS_OUTPUT_FORMAT) || 'mp3_44100_128',
+      timeoutMs: parseIntEnv('ELEVENLABS_TIMEOUT_MS', 30000),
+      // Paket gratis ElevenLabs cuma boleh 2 request paralel: lebih dari itu antre di server (bukan ditolak ElevenLabs).
+      maxConcurrency: parseIntEnv('ELEVENLABS_MAX_CONCURRENCY', 2),
+      queueWaitMs: parseIntEnv('ELEVENLABS_QUEUE_WAIT_MS', 15000),
+      voicesCacheMs: parseIntEnv('ELEVENLABS_VOICES_CACHE_MS', 30 * 60 * 1000),
+      maxVoices: parseIntEnv('ELEVENLABS_MAX_VOICES', 6),
+      voiceCategories: parseList(process.env.ELEVENLABS_VOICE_CATEGORIES, ['premade']),
+      // Opsional: paksa daftar suara sendiri. Format "voiceId" atau "voiceId:Nama:female|male", dipisah koma.
+      voiceIds: parseList(process.env.ELEVENLABS_VOICE_IDS, []),
+      sttModel: cleanKey(process.env.ELEVENLABS_STT_MODEL) || 'scribe_v1',
+    },
+    tts: {
+      maxCharsPerRequest: parseIntEnv('TTS_MAX_CHARS_PER_REQUEST', 3000),
+      // Batas karakter yang boleh dibuatkan suaranya per perangkat per 24 jam (0 = tanpa batas). Ngelindungin kuota kredit.
+      maxCharsPerClientPerDay: parseIntEnvAllowZero('TTS_MAX_CHARS_PER_CLIENT_PER_DAY', 15000),
+      // Audio yang sama (suara+kecepatan+teks identik) disimpan di memori supaya "dengarkan lagi" gak makan kredit (0 = mati).
+      audioCacheMaxBytes: parseIntEnvAllowZero('TTS_AUDIO_CACHE_MAX_MB', 40) * 1024 * 1024,
+      rateLimitPerMin: parseIntEnv('TTS_RATE_LIMIT_PER_MIN', 40),
+      rateLimitPerIpPerMin: parseIntEnv('TTS_RATE_LIMIT_PER_IP', 120),
+    },
+    stt: {
+      // auto = Groq Whisper dulu (gratis, cepat, kuotanya terpisah dari ElevenLabs), cadangannya ElevenLabs Scribe.
+      provider: ['auto', 'groq', 'elevenlabs'].includes(String(process.env.STT_PROVIDER || '').toLowerCase())
+        ? String(process.env.STT_PROVIDER).toLowerCase()
+        : 'auto',
+      groqBaseUrl: (cleanKey(process.env.GROQ_STT_BASE_URL) || 'https://api.groq.com/openai/v1').replace(/\/+$/, ''),
+      groqModels: parseList(process.env.GROQ_STT_MODEL, ['whisper-large-v3-turbo', 'whisper-large-v3']),
+      maxAudioBytes: parseIntEnv('STT_MAX_AUDIO_MB', 8) * 1024 * 1024,
+      timeoutMs: parseIntEnv('STT_TIMEOUT_MS', 30000),
+      rateLimitPerMin: parseIntEnv('STT_RATE_LIMIT_PER_MIN', 20),
+      rateLimitPerIpPerMin: parseIntEnv('STT_RATE_LIMIT_PER_IP', 60),
+    },
+  },
+
   databasePath: process.env.DATABASE_PATH || './data/vaeltrixai.db',
   maxBodyBytes: parseIntEnv('MAX_BODY_BYTES', 15 * 1000 * 1000),
   upstreamTimeoutMs: parseIntEnv('UPSTREAM_TIMEOUT_MS', 60000),
@@ -154,5 +206,14 @@ env.providerAvailable = {
 };
 
 env.anyProviderAvailable = Object.values(env.providerAvailable).some(Boolean);
+
+// Status fitur suara (sengaja TERPISAH dari providerAvailable: key ElevenLabs bukan provider chat,
+// jadi gak boleh ikut ngitung "anyProviderAvailable").
+env.voiceAvailable = (() => {
+  const mode = env.voice.stt.provider;
+  const groq = Boolean(env.providerKeys.groq) && mode !== 'elevenlabs';
+  const elevenlabs = Boolean(env.voice.elevenlabs.apiKey) && mode !== 'groq';
+  return { tts: Boolean(env.voice.elevenlabs.apiKey), stt: { groq, elevenlabs, any: groq || elevenlabs } };
+})();
 
 module.exports = env;
