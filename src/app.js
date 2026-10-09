@@ -42,6 +42,12 @@ function createApp() {
     next();
   });
 
+  // Health check ringan untuk halaman status: tanpa data internal.
+  app.get('/health', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json({ status: 'ok', uptime: Math.round(process.uptime()) });
+  });
+
   // FIX: health check sekarang ikut nunjukin provider mana yang key-nya kebaca
   app.get('/', (req, res) => {
     res.status(200).json({
