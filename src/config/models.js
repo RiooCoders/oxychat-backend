@@ -4,9 +4,11 @@ const env = require('./env');
 const SPECTRAX_MODELS = ['spectrax'];
 const OPENROUTER_MODELS = ['openrouter/free'];
 const NVIDIA_MODELS = [
-  'nvidia/llama-3.3-nemotron-super-49b-v1.5',
-  'deepseek-ai/deepseek-r1',
-  'meta/llama-3.3-70b-instruct',
+  // Model lama (llama-3.3-nemotron-super-49b, deepseek-r1, llama-3.3-70b) sudah EOL/deprecated di NIM.
+  // Diganti ke ID yang masih terdaftar di integrate.api.nvidia.com (Oktober 2026).
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'deepseek-ai/deepseek-v4.1-flash',
+  'nvidia/llama-3.1-nemotron-70b-instruct',
 ];
 const MISTRAL_MODELS = ['vaneus-4.0'];
 const PERPLEXITY_MODELS = ['sonar-reasoning-pro', 'sonar-pro', 'sonar', 'sonar-deep-research'];
