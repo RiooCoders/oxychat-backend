@@ -22,13 +22,21 @@ function isFallbackWorthy(err) {
  * Interface-nya sengaja disamain persis kayak provider biasa (call({payload,stream,signal}))
  * biar chat.service.js bisa perlakukan spectrax sama kayak provider lain.
  */
-async function call({ payload, stream, signal }) {
+async function call({ payload, stream, signal, switchOnFlag = true }) {
+  let switchedByFlag = false; // true kalau Gemini menandai pesan lalu pindah ke NVIDIA (dikabarkan ke chat.service)
   if (gemini.isAvailable()) {
     try {
       return await gemini.call({ model: env.geminiModel, payload, stream, signal });
     } catch (err) {
       if (signal && signal.aborted) throw err;
-      if (!isFallbackWorthy(err)) throw err;
+      // Pesan ditandai filter Gemini: kalau user mengizinkan ganti model, lanjut ke NVIDIA; kalau tidak, jeda.
+      const flagged = err instanceof ApiError && err.code === 'CONTENT_FLAGGED';
+      if (flagged) {
+        if (!switchOnFlag) throw err;
+        switchedByFlag = true;
+      } else if (!isFallbackWorthy(err)) {
+        throw err;
+      }
       logger.warn('spectrax_fallback_to_nvidia', { reason: err.code || err.message });
     }
   } else {
@@ -38,7 +46,8 @@ async function call({ payload, stream, signal }) {
   if (!nvidia.isAvailable()) {
     throw badGateway('Spectrax tidak tersedia: Gemini maupun NVIDIA belum dikonfigurasi');
   }
-  return nvidia.call({ model: env.spectraxFallbackModel, payload, stream, signal });
+  const out = await nvidia.call({ model: env.spectraxFallbackModel, payload, stream, signal });
+  return switchedByFlag ? { ...out, switched: true } : out;
 }
 
 module.exports = { call, name: 'spectrax' };
