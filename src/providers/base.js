@@ -3,6 +3,12 @@
 const env = require('../config/env');
 const logger = require('../utils/logger');
 const { badGateway, gatewayTimeout, ApiError } = require('../utils/errors');
+const {
+  looksFlaggedUpstream,
+  isFlaggedCompletion,
+  peekStreamForFlag,
+  contentFlaggedError,
+} = require('../utils/content-flag');
 
 /**
  * Coba ekstrak message error yang manusiawi dari body error provider (macem-macem bentuknya
@@ -23,6 +29,10 @@ function normalizeUpstreamError(status, rawText, providerName, headers) {
   const lower = String(parsedMessage).toLowerCase();
   const retryAfter = headers && typeof headers.get === 'function' ? Number(headers.get('retry-after')) : NaN;
   const waitHint = Number.isFinite(retryAfter) && retryAfter > 0 ? ` (~${Math.ceil(retryAfter)} detik)` : '';
+
+  // Pesan ditandai filter keamanan/moderasi provider: dipisah dari error auth/invalid biasa supaya
+  // chat.service bisa memutuskan ganti model atau jeda (harus dicek SEBELUM cabang 403 = auth di bawah).
+  if (looksFlaggedUpstream(status, rawText)) return contentFlaggedError(providerName);
 
   if (status === 401 || status === 403 || lower.includes('authentication') || lower.includes('api key')) {
     return new ApiError(502, 'PROVIDER_AUTH_ERROR', `Provider ${providerName} menolak API key (cek key di .env)`);
@@ -143,10 +153,30 @@ function makeOpenAICompatibleProvider({ name, baseUrl, apiKey, extraHeaders = {}
         throw normalizeUpstreamError(res.status, rawText, name, res.headers);
       }
 
-      if (stream) return { stream: true, upstream: res };
+      if (stream) {
+        // Intip awal stream: kalau provider langsung nutup dengan finish_reason "content_filter"
+        // (tanpa isi), itu pesan ditandai dan harus ditangani sebelum ada byte yang dikirim ke client.
+        let peeked;
+        try {
+          peeked = await peekStreamForFlag(res);
+        } catch (err) {
+          if (signal && signal.aborted) throw err;
+          logger.warn('provider_stream_peek_failed', { provider: name, message: err.message });
+          throw badGateway(`Koneksi stream ke provider ${name} terputus sebelum ada jawaban`);
+        }
+        if (peeked.flagged) {
+          logger.warn('provider_content_flagged', { provider: name, via: 'stream' });
+          throw contentFlaggedError(name);
+        }
+        return { stream: true, upstream: peeked.response };
+      }
       const data = await res.json().catch(() => {
         throw badGateway(`Provider ${name} mengembalikan response yang tidak valid`);
       });
+      if (isFlaggedCompletion(data)) {
+        logger.warn('provider_content_flagged', { provider: name, via: 'completion' });
+        throw contentFlaggedError(name);
+      }
       return { stream: false, data };
     },
   };
