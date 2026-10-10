@@ -14,6 +14,8 @@ const {
 } = require('../config/models');
 const { wantsThinking, providerReasoningParams } = require('../utils/reasoning');
 const { badGateway, ApiError } = require('../utils/errors');
+const webContext = require('./web-context.service');
+const { buildPolicyPrompt, resolveTimezone, formatNow } = require('../config/system-policy');
 
 function buildSanitizedPayload(body, providerName, upstreamModel) {
   const payload = { messages: body.messages };
@@ -37,6 +39,100 @@ function normalizeNonStreamResponse(data, upstreamModel, keepThinking) {
     choices: cleaned.choices || [],
     usage: cleaned.usage,
   };
+}
+
+/**
+ * Gabungin aturan kejujuran ke system message pertama (atau bikin system message baru di paling atas).
+ * Digabung jadi SATU system message, bukan dua, karena beberapa provider (mis. Perplexity) rewel soal itu.
+ */
+function injectSystem(messages, text) {
+  if (!text) return messages;
+  const copy = messages.slice();
+  const first = copy[0];
+  if (first && first.role === 'system') {
+    if (typeof first.content === 'string') copy[0] = { ...first, content: text + '\n\n' + first.content };
+    else if (Array.isArray(first.content)) copy[0] = { ...first, content: [{ type: 'text', text }, ...first.content] };
+    else copy[0] = { ...first, content: text };
+    return copy;
+  }
+  return [{ role: 'system', content: text }, ...copy];
+}
+
+/** Tempel blok hasil pencarian di pesan user TERAKHIR (copy; riwayat asli di client gak berubah). */
+function attachToLastUser(messages, block) {
+  if (!block) return messages;
+  const copy = messages.slice();
+  for (let i = copy.length - 1; i >= 0; i--) {
+    const m = copy[i];
+    if (!m || m.role !== 'user') continue;
+    if (typeof m.content === 'string') copy[i] = { ...m, content: m.content + '\n\n' + block };
+    else if (Array.isArray(m.content)) copy[i] = { ...m, content: [...m.content, { type: 'text', text: block }] };
+    return copy;
+  }
+  return copy;
+}
+
+/**
+ * Siapin "grounding" tiap request: aturan jujur/anti-halusinasi + (kalau perlu) hasil pencarian web real-time.
+ * GAK PERNAH throw gara-gara pencarian: kalau gagal, lanjut tanpa hasil dan model dikasih catatan sistem
+ * supaya dia jujur ke user (bukan ngarang). Cuma abort dari client yang dilempar ulang.
+ */
+async function prepareGrounding(body, route, { signal, events, surface, clientKey }) {
+  const plain = { messages: body.messages, web: null, temperature: body.temperature };
+  // Panggilan utilitas internal dari frontend sendiri (judul chat, deskripsi gambar): gak perlu cari/aturan.
+  if (surface === 'app' && body.utility === true) return plain;
+
+  const tz = resolveTimezone(body.client_timezone);
+  const decision = webContext.decide({
+    messages: body.messages,
+    webSearch: body.web_search,
+    surface,
+    providerName: route.providerName,
+  });
+
+  let webState = null; // { state, reason, fetchedAtText }
+  let block = '';
+  let meta = null;
+  if (decision.search) {
+    if (events && events.status) events.status('searching');
+    let ctx;
+    try {
+      ctx = await webContext.build({ messages: body.messages, signal, tz, clientKey, mode: decision.mode });
+    } catch (err) {
+      if (signal && signal.aborted) throw err;
+      logger.warn('web_context_error', { message: err.message });
+      const now = new Date();
+      ctx = {
+        state: 'failed',
+        reason: 'terjadi kesalahan saat mencari',
+        block: '',
+        fetchedAtText: formatNow(now, tz),
+        meta: { state: 'failed', mode: decision.mode, engine: 'duckduckgo', query: '', timeRange: '', relaxed: false, searchedAt: now.toISOString(), reason: 'terjadi kesalahan saat mencari', sources: [] },
+      };
+    }
+    webState = { state: ctx.state, reason: ctx.reason, fetchedAtText: ctx.fetchedAtText };
+    block = ctx.block || '';
+    meta = ctx.meta;
+    if (events && events.web) events.web(meta);
+    logger.info('web_grounding', { mode: decision.mode, why: decision.reason, state: ctx.state, sources: meta.sources.length });
+  }
+
+  const policyText = buildPolicyPrompt({
+    tz,
+    citeStyle: surface === 'api' ? 'domain' : 'number',
+    core: env.policyEnabled,
+    web: webState,
+  });
+  let messages = injectSystem(body.messages, policyText);
+  if (block) messages = attachToLastUser(messages, block);
+
+  // Jawaban yang berpegang pada hasil pencarian: suhu dibatasi biar gak "kreatif" ngarang di luar sumber.
+  let temperature = body.temperature;
+  if (webState && webState.state === 'used') {
+    const cap = env.webSearch.maxTemperature;
+    temperature = typeof temperature === 'number' ? Math.min(temperature, cap) : cap;
+  }
+  return { messages, web: meta, temperature };
 }
 
 function messagesHaveImage(messages) {
@@ -114,21 +210,63 @@ function finalError(primaryErr, attempts) {
   return new ApiError(primaryErr.status, primaryErr.code, `${primaryErr.message} (cadangan ${backups.join(', ')} juga gagal)`);
 }
 
-async function handleChat(body, { signal, modelAlreadyResolved = false } = {}) {
+/**
+ * Boleh ganti model kalau pesan ditandai filter keamanan? Frontend sendiri (/api/chat) default AKTIF
+ * (bisa dimatiin user lewat Pengaturan > Kemampuan); API key (/v1/chat) default MATI kecuali minta
+ * eksplisit lewat body.switch_on_flag = true, supaya perilaku API publik tidak berubah diam-diam.
+ */
+function resolveSwitchOnFlag(body, surface) {
+  if (body.switch_on_flag === true) return true;
+  if (body.switch_on_flag === false) return false;
+  return surface === 'app';
+}
+
+/** Error saat pesan ditandai dan penggantian model dimatikan: obrolan dijeda (bukan dialihkan diam-diam). */
+function pausedError(surface) {
+  const message =
+    surface === 'app'
+      ? 'Pesan ini ditandai filter keamanan, jadi obrolan dijeda. Ubah isi pesanmu, atau nyalakan "Ganti model saat pesan ditandai" di Pengaturan > Kemampuan.'
+      : 'Pesan ini ditandai filter keamanan provider. Kirim "switch_on_flag": true kalau mau otomatis dialihkan ke model lain.';
+  return new ApiError(422, 'CONTENT_FLAGGED', message);
+}
+
+/**
+ * @param {object} body  body chat OpenAI-compatible (+ field opsional: web_search, client_timezone, utility, switch_on_flag)
+ * @param {{signal?:AbortSignal, modelAlreadyResolved?:boolean, events?:{status?:Function, web?:Function},
+ *          surface?:'app'|'api', clientKey?:string}} opts
+ *   surface 'app' = frontend sendiri (/api/chat): pencarian otomatis (mode auto).
+ *   surface 'api' = pemegang API key (/v1/chat): pencarian hanya kalau body.web_search diaktifkan.
+ */
+async function handleChat(body, { signal, modelAlreadyResolved = false, events, surface = 'app', clientKey } = {}) {
   const validated = validateChatBody(body, { modelAlreadyResolved });
   const keepThinking = wantsThinking(body);
   const route = resolveModelRoute(validated.model);
   const candidates = buildCandidates(route, { hasImage: messagesHaveImage(body.messages) });
 
+  let grounded;
+  try {
+    grounded = await prepareGrounding(body, route, { signal, events, surface, clientKey });
+  } catch (err) {
+    if (signal && signal.aborted) throw err;
+    // Aturan jujur + pencarian web itu fitur TAMBAHAN: bug tak terduga di dalamnya gak boleh bikin chat gagal.
+    // Chat tetap dilayani apa adanya, dan errornya dicatat keras di log supaya cepat ketahuan.
+    logger.error('grounding_failed', { message: err.message, stack: err.stack });
+    grounded = { messages: body.messages, web: null, temperature: body.temperature };
+  }
+  const effectiveBody = { ...body, messages: grounded.messages };
+  if (grounded.temperature !== undefined) effectiveBody.temperature = grounded.temperature;
+
+  const switchOnFlag = resolveSwitchOnFlag(body, surface);
+  let flagged = false; // minimal satu kandidat menandai pesan; kalau kandidat lain berhasil, client dikasih tahu "dialihkan"
   let primaryError = null;
   const attempted = [];
   for (let idx = 0; idx < candidates.length; idx++) {
     const cand = candidates[idx];
     attempted.push(cand);
     try {
-      const payload = buildSanitizedPayload(body, cand.providerName, cand.upstreamModel);
+      const payload = buildSanitizedPayload(effectiveBody, cand.providerName, cand.upstreamModel);
       const result = cand.call
-        ? await cand.call({ payload, stream: validated.stream, signal })
+        ? await cand.call({ payload, stream: validated.stream, signal, switchOnFlag })
         : await cand.provider.call({ model: cand.upstreamModel, payload, stream: validated.stream, signal });
       if (idx > 0) {
         logger.warn('chat_fallback_used', {
@@ -137,7 +275,7 @@ async function handleChat(body, { signal, modelAlreadyResolved = false } = {}) {
           reason: primaryError && (primaryError.code || primaryError.message),
         });
       }
-      return finalizeResult(result, cand.providerName, cand.upstreamModel, keepThinking);
+      return finalizeResult(result, cand.providerName, cand.upstreamModel, keepThinking, grounded.web, flagged);
     } catch (err) {
       if (signal && signal.aborted) throw err;
       logger.warn('chat_candidate_failed', {
@@ -147,23 +285,48 @@ async function handleChat(body, { signal, modelAlreadyResolved = false } = {}) {
         status: err.status,
         message: err.message,
       });
+      const isFlag = err instanceof ApiError && err.code === 'CONTENT_FLAGGED';
+      if (isFlag) {
+        flagged = true;
+        logger.warn('chat_content_flagged', { provider: cand.providerName, model: cand.upstreamModel, switchOnFlag });
+        if (!switchOnFlag) throw pausedError(surface); // user matiin ganti-model: obrolan dijeda
+      }
       if (idx === 0) {
         primaryError = err;
-        if (!isFallbackEligible(err)) throw err; // request-nya emang salah: fallback percuma
+        if (!isFlag && !isFallbackEligible(err)) throw err; // request-nya emang salah: fallback percuma
       }
     }
+  }
+  if (primaryError instanceof ApiError && primaryError.code === 'CONTENT_FLAGGED') {
+    throw new ApiError(
+      422,
+      'CONTENT_FLAGGED',
+      'Pesan ini ditandai filter keamanan dan tidak ada model cadangan yang bisa melanjutkan. Ubah isi pesanmu lalu kirim lagi.'
+    );
   }
   throw finalError(primaryError || badGateway('Tidak ada provider yang tersedia'), attempted);
 }
 
-function finalizeResult(result, providerName, upstreamModel, keepThinking) {
-  if (result.stream) return { stream: true, upstream: result.upstream, providerName, keepThinking };
-  return {
-    stream: false,
-    data: normalizeNonStreamResponse(result.data, upstreamModel, keepThinking),
-    providerName,
-    keepThinking,
-  };
+function finalizeResult(result, providerName, upstreamModel, keepThinking, web, flagged = false) {
+  // `flagged`: kandidat sebelumnya menandai pesan; `result.switched`: spectrax sudah pindah Gemini -> NVIDIA sendiri.
+  const switched = flagged === true || (result && result.switched === true) ? { reason: 'content_flagged' } : null;
+  if (result.stream) return { stream: true, upstream: result.upstream, providerName, keepThinking, web, switched };
+  const data = normalizeNonStreamResponse(result.data, upstreamModel, keepThinking);
+  // Info sumber pencarian / penggantian model ikut di JSON; field tambahan ini diabaikan klien OpenAI-compatible biasa.
+  if ((web || switched) && data && typeof data === 'object') {
+    data.vaeltrix = {};
+    if (web) data.vaeltrix.web = web;
+    if (switched) data.vaeltrix.switched = switched;
+  }
+  return { stream: false, data, providerName, keepThinking, web, switched };
 }
 
-module.exports = { handleChat, buildSanitizedPayload, buildCandidates, isFallbackEligible };
+module.exports = {
+  handleChat,
+  buildSanitizedPayload,
+  buildCandidates,
+  isFallbackEligible,
+  injectSystem,
+  attachToLastUser,
+  resolveSwitchOnFlag,
+};
