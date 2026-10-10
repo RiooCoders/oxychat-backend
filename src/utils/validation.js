@@ -76,6 +76,9 @@ function validateChatBody(body, { modelAlreadyResolved = false } = {}) {
   if (body.temperature !== undefined && typeof body.temperature !== 'number') {
     throw badRequest('"temperature" harus angka');
   }
+  if (body.switch_on_flag !== undefined && typeof body.switch_on_flag !== 'boolean') {
+    throw badRequest('"switch_on_flag" harus boolean');
+  }
 
   return { model, messages: body.messages, stream: Boolean(body.stream) };
 }
