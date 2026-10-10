@@ -92,7 +92,7 @@ const env = {
   openrouterModel: process.env.OPENROUTER_MODEL || 'openrouter/free',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-flash-latest',
   spectraxFallbackModel:
-    process.env.SPECTRAX_FALLBACK_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+    process.env.SPECTRAX_FALLBACK_MODEL || 'nvidia/nemotron-3.5-lightning-30b-a3b',
   modelOverrides: parseModelOverrides(process.env.MODEL_OVERRIDES),
 
   openrouterSiteUrl: process.env.OPENROUTER_SITE_URL || '',
