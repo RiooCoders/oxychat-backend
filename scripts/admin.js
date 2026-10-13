@@ -154,7 +154,7 @@ const commands = {
     }
     const { grantPlanForUser } = require('../src/services/supabase-admin.service');
     const PLAN_CREDIT_DEFS = {
-      gratis: { awal: 500, harian: 10 }, pro: { awal: 1500, harian: 100 },
+      gratis: { awal: 500, harian: 100 }, pro: { awal: 1500, harian: 100 },
       maks: { awal: 2000, harian: 300 }, promax: { awal: 5000, harian: 450 },
     };
     const def = PLAN_CREDIT_DEFS[row.plan] || PLAN_CREDIT_DEFS.gratis;
